@@ -18,6 +18,7 @@ mod risk;
 mod validate;
 
 pub use error::SafetyError;
+pub use known_folders::{Known, path_of as known_folder};
 pub use path::{CanonicalPath, is_reparse_point, is_within};
 pub use protected::ProtectedSet;
 pub use risk::RiskLevel;

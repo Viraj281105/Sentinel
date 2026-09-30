@@ -7,15 +7,15 @@ use std::path::PathBuf;
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{
     FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, FOLDERID_LocalAppData,
-    FOLDERID_Music, FOLDERID_Pictures, FOLDERID_Profile, FOLDERID_ProgramFiles,
-    FOLDERID_ProgramFilesX86, FOLDERID_RoamingAppData, FOLDERID_Videos, FOLDERID_Windows,
-    KF_FLAG_DEFAULT, SHGetKnownFolderPath,
+    FOLDERID_Music, FOLDERID_Pictures, FOLDERID_Profile, FOLDERID_ProgramData,
+    FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX86, FOLDERID_RoamingAppData, FOLDERID_Videos,
+    FOLDERID_Windows, KF_FLAG_DEFAULT, SHGetKnownFolderPath,
 };
 use windows::core::GUID;
 
 /// Well-known folders Sentinel cares about.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Known {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Known {
     Desktop,
     Documents,
     Downloads,
@@ -24,6 +24,7 @@ pub(crate) enum Known {
     Music,
     Windows,
     Profile,
+    ProgramData,
     ProgramFiles,
     ProgramFilesX86,
     RoamingAppData,
@@ -41,6 +42,7 @@ impl Known {
             Self::Music => &FOLDERID_Music,
             Self::Windows => &FOLDERID_Windows,
             Self::Profile => &FOLDERID_Profile,
+            Self::ProgramData => &FOLDERID_ProgramData,
             Self::ProgramFiles => &FOLDERID_ProgramFiles,
             Self::ProgramFilesX86 => &FOLDERID_ProgramFilesX86,
             Self::RoamingAppData => &FOLDERID_RoamingAppData,
@@ -50,7 +52,7 @@ impl Known {
 }
 
 /// Resolve a known folder, or `None` if the shell cannot provide it.
-pub(crate) fn path_of(folder: Known) -> Option<PathBuf> {
+pub fn path_of(folder: Known) -> Option<PathBuf> {
     // SAFETY: the shell returns a NUL-terminated wide string allocated with
     // CoTaskMemAlloc, which we copy and then free exactly once.
     unsafe {

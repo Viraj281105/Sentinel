@@ -1,0 +1,16 @@
+[package]
+name = "sentinel-classify"
+description = "Deterministic storage classification rules for Sentinel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sentinel-safety = { path = "../sentinel-safety" }
+sentinel-scanner = { path = "../sentinel-scanner" }
+serde = { version = "1", features = ["derive"] }
+ts-rs = "11"
