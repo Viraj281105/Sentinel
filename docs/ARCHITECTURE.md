@@ -1,6 +1,6 @@
 # Sentinel Architecture
 
-Status: **Phase 0 – design only. No product code exists yet.** This document describes
+Status: **Phase 1 in progress. Only `sentinel-safety` is implemented.** This document describes
 the discovered environment and the intended architecture. Sections marked *(planned)*
 are not implemented.
 
@@ -106,7 +106,14 @@ Sentinel/
 This deviates from the suggested single-crate `src-tauri/src/<modules>` layout, on
 purpose: `sentinel-safety` having no dependency on the executor and `sentinel-ai` having
 no dependency on `sentinel-cleanup` is a security property, and Cargo enforces it.
-Crates are created only when their first real feature lands (no empty scaffolding).
+Crates are created only when their first real feature lands (no empty scaffolding). `sentinel-core` does not exist yet for that reason.
+
+### Implemented: `sentinel-safety`
+
+- `CanonicalPath::resolve` – lexical rejection (relative, `..`, UNC/device paths, ADS, reserved names, trailing dot/space, non-Unicode) then OS canonicalization.
+- `ProtectedSet` – built-in name/extension rules plus path roots (with exceptions); `from_system()` uses shell known folders.
+- `Policy::allowed_root` / `Policy::validate` – produce `AllowedRoot` / `ValidatedTarget`; links are never followed; `revalidate` compares volume serial + file index taken from an open handle.
+- `RiskLevel` – ordered, `Protected` never actionable.
 
 ## 3. Key design decisions
 

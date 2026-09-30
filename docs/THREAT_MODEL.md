@@ -1,7 +1,7 @@
 # Sentinel Threat Model
 
-Status: Phase 0 (design). Mitigations are requirements for implementation, not claims
-about existing code.
+Status: rows T1, T2 and T3 are implemented in `sentinel-safety` (see SAFETY_MODEL.md for
+limits); all other mitigations are still requirements, not claims about existing code.
 
 ## Assets
 

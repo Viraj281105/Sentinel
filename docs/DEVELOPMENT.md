@@ -1,7 +1,6 @@
 # Sentinel Development Guide
 
-Status: Phase 0. The project has no build yet; this documents the environment
-discovered and what must be set up.
+Status: Phase 1. The workspace builds; only `sentinel-safety` exists so far.
 
 ## Verified environment (maintainer machine)
 
@@ -13,34 +12,27 @@ present. Node 24.19 / npm 11.17, Python 3.14, JDK 21, .NET 10, Docker 29.7, WSL2
 
 | Requirement | Status here | Action |
 |---|---|---|
-| Rust (stable, MSVC target `x86_64-pc-windows-msvc`) | **Missing** | Install via `rustup` (needs maintainer approval) |
+| Rust (stable, MSVC target `x86_64-pc-windows-msvc`) | Installed (1.98.1) under `D:\Installed\Rust` | – |
 | MSVC C++ build tools | Present | – |
 | WebView2 runtime | Present | – |
 | Node 20+ / npm | Present | – |
 | Git | Present | – |
 
-### Installing Rust (pending approval)
+### Installing Rust
 
-```powershell
-winget install Rustlang.Rustup
-rustup default stable-x86_64-pc-windows-msvc
-```
+On the maintainer machine Rust lives in `D:\Installed\Rust` (`CARGO_HOME=D:\Installed\Rust\cargo`,
+`RUSTUP_HOME=D:\Installed\Rust\rustup`, `D:\Installed\Rust\cargo\bin` on `PATH`) because `C:` has limited free
+space. Elsewhere, the standard `rustup` install works. `target/` stays in the repo on `D:`.
 
-Disk note: `C:` has limited free space (~37 GiB). Set `CARGO_HOME` and
-`RUSTUP_HOME` to a directory on `D:` before installing, and keep `target/` on `D:`
-(the repo lives there already).
-
-## Planned commands
-
-Filled in as each piece lands:
+## Commands
 
 ```powershell
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-npm run lint && npm test && npm run build
-npm run tauri build
 ```
+
+Frontend commands will be added with the Tauri shell milestone.
 
 ## Testing rules
 
@@ -49,13 +41,15 @@ npm run tauri build
    protected-path behavior, symlink/junction handling, failure recovery.
 3. Junction/symlink tests create real reparse points inside the temp fixture; tests
    requiring symlink privilege detect and report a skip rather than silently passing.
-4. Never point a test at `%USERPROFILE%`, `C:\Windows`, or any real user path.
+4. Symlink tests print `SKIPPED` when the OS denies symlink creation; junction tests
+   (`mklink /J`) need no privilege and always run.
+5. Never point a test at `%USERPROFILE%`, `C:\Windows`, or any real user path.
 
 ## Git workflow
 
 - One coherent milestone per commit, conventional commit messages.
 - Before each commit: `git status`, `git diff`, `git diff --cached`; verify no
   secrets, binaries or machine-specific data.
-- Remote: `https://github.com/Viraj281105/Sentinel` (currently empty). Pushing is done
-  only with the maintainer's approval.
+- Remote: `https://github.com/Viraj281105/Sentinel`. Single-developer project: commits
+  go directly to `main`, pushed by the maintainer's standing instruction.
 - Never commit `.env`, credentials, tokens, `target/`, `node_modules/`.

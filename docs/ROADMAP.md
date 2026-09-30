@@ -5,15 +5,15 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 Each milestone is a vertical slice: implementation + tests + docs + commit. The order
 follows the master directive, adjusted for what was discovered in Phase 0.
 
-## Phase 0 – Reconnaissance & design 🚧
+## Phase 0 – Reconnaissance & design ✅
 - ✅ Inspect repo, git, environment, toolchain
 - ✅ Architecture, threat model, safety model, development docs
-- Finding: Rust toolchain is missing; C: has only ~37 GiB free.
+- Finding: Rust toolchain was missing (now installed); C: has only ~37 GiB free.
 
-## Phase 1 – Foundations ⬜
-1. Install Rust toolchain (requires user authorization); place `CARGO_HOME`/`target` on D:
-2. Cargo workspace + `sentinel-core` (errors, operation IDs, config)
-3. `sentinel-safety` first: path canonicalization, protected-path set, risk levels — **before any scanner or cleanup code**, with a full test suite
+## Phase 1 – Foundations 🚧
+1. ✅ Rust 1.98 installed to `D:\Installed\Rust`
+2. ✅ Cargo workspace; `sentinel-core` deferred until it has a real consumer (no premature abstraction)
+3. ✅ `sentinel-safety`: path canonicalization, protected-path set, risk levels, `Policy::validate` → `ValidatedTarget` with identity revalidation (20 tests)
 4. Tauri 2 shell + React/Vite/Tailwind skeleton, IPC with generated types, tracing
 5. CI skeleton (fmt, clippy, tests, frontend lint/build)
 
@@ -51,7 +51,11 @@ UI polish, notifications, installer, startup integration.
 ## Phase 12 – Hardening & release ⬜
 Security review, fuzzing of path handling, performance budget, public-release docs.
 
-## First implementation milestone
+## Next implementation milestone
+
+Tauri 2 shell + React/Vite/Tailwind skeleton with tracing and typed IPC.
+
+## Completed first milestone (historical)
 
 `chore: initialize cargo workspace with sentinel-core and sentinel-safety` —
 canonical path handling and protected-path policy with tests. This is deliberately the

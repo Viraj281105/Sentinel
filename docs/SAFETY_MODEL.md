@@ -1,6 +1,6 @@
 # Sentinel Safety Model
 
-Status: Phase 0 (design specification for implementation).
+Status: path validation is implemented in `sentinel-safety`; providers, executor, quarantine and audit are still design only.
 
 ## Principles
 
@@ -40,6 +40,25 @@ Enforcement is **not string matching**. Procedure:
 3. Reject if the path or any ancestor is a reparse point that leaves the provider root.
 4. Test containment by component-wise ancestry, never by `starts_with` on strings.
 5. Re-run steps 1–4 on the open handle immediately before the operation.
+
+### Implemented behavior and known limits (`sentinel-safety`)
+
+- Protection is checked in three directions: the path is *inside* a protected root, *is* one,
+  or would *contain* one (so deleting a parent can never take a protected child with it).
+  Provider roots may contain protected children; those are guarded per target.
+- Folder redirection is handled: on a machine where Documents lives in OneDrive, the stale
+  `%USERPROFILE%\Documents` is protected as well as the redirected location.
+- A target must be in canonical form. A path using a junction, symlink or 8.3 alias in any
+  ancestor is refused (`NotCanonical`). The final component may itself be a link and is then
+  reported as `TargetKind::Link`; only the link may be removed.
+- `revalidate` catches an object being swapped (different file index) or replaced by a
+  junction between validation and use. It narrows, but cannot fully close, the
+  check-to-use window; the executor must additionally operate through handles.
+- **Not yet implemented:** working-tree protection for Git repositories (only `.git` itself
+  is protected today; project-aware rules arrive with project detection, Phase 4) and
+  per-descendant checks during recursive deletion (`Policy::check_protected` exists for
+  the executor to use on each enumerated entry).
+- Any reparse point, including cloud-file placeholders, is treated as a link.
 
 ## Cleanup providers (contract)
 
