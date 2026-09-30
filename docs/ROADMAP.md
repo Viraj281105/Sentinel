@@ -20,7 +20,7 @@ follows the master directive, adjusted for what was discovered in Phase 0.
 ## Phase 2 – Storage intelligence 🚧
 1. ✅ Drive discovery (`sentinel-scanner`): Win32 volume enumeration, capacity, low-space flag; Storage page and Overview summary on real data; typed `CommandError`
 2. ✅ Cancellable parallel directory scanner (budgets, exclusions, link safety, largest files) with live progress, cancel, folder drill-down and largest files in the Storage page
-3. SQLite cache and storage history (scan results survive restarts; per-drive growth over time)
+3. ✅ SQLite persistence (`sentinel-store`): analyses survive restarts, per-folder change since the previous analysis, hourly drive capacity snapshots with 30-day free-space trend
 4. Deterministic classifier (categories per the master directive; unknown stays unknown)
 
 ## Phase 3 – Cleanup framework ⬜
@@ -56,9 +56,10 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-`feat(store): persist scans and storage history in SQLite` – `sentinel-store` crate with
-migrations; save scan summaries and the folder tree down to a size threshold; record
-drive capacity snapshots; Storage page shows the previous analysis after restart.
+`feat(classify): deterministic storage classification` – rule table mapping known
+locations (Windows, Program Files, package caches, browser data, WSL/Docker disks, temp,
+user data) to the directive's categories, applied to scan nodes; anything unmatched stays
+`Unknown`; category breakdown on the Storage page.
 
 ## Completed first milestone (historical)
 

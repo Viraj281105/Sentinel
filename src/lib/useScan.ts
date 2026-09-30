@@ -3,12 +3,13 @@ import { useCallback, useEffect, useState } from "react";
 import type { ScanFailedEvent } from "../bindings/ScanFailedEvent";
 import type { ScanFinishedEvent } from "../bindings/ScanFinishedEvent";
 import type { ScanProgressEvent } from "../bindings/ScanProgressEvent";
+import type { SavedScan } from "../bindings/SavedScan";
 import { describeError, ipc } from "./ipc";
 
 export interface ScanState {
   loaded: boolean;
   running: ScanProgressEvent | null;
-  last: ScanFinishedEvent | null;
+  last: SavedScan | null;
   error: string | null;
 }
 
@@ -29,7 +30,7 @@ export function useScan() {
           setState((s) => (s.running && s.running.id !== e.payload.id ? s : { ...s, running: e.payload })),
         ),
         listen<ScanFinishedEvent>("scan-finished", (e) =>
-          setState((s) => ({ ...s, running: null, last: e.payload, error: null })),
+          setState((s) => ({ ...s, running: null, last: e.payload.scan, error: null })),
         ),
         listen<ScanFailedEvent>("scan-failed", (e) =>
           setState((s) => ({ ...s, running: null, error: e.payload.message })),

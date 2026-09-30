@@ -4,9 +4,9 @@ import type { DirChild } from "../bindings/DirChild";
 import type { DirListing } from "../bindings/DirListing";
 import type { LargeFile } from "../bindings/LargeFile";
 import type { NodeStatus } from "../bindings/NodeStatus";
-import type { ScanFinishedEvent } from "../bindings/ScanFinishedEvent";
+import type { SavedScan } from "../bindings/SavedScan";
 import type { ScanProgressEvent } from "../bindings/ScanProgressEvent";
-import { formatBytes, percent } from "../lib/format";
+import { formatBytes, formatDateTime, formatDelta, percent } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
 import { ErrorNote, Loading, Panel } from "./ui";
 
@@ -34,7 +34,7 @@ export function ScanProgressView({ run, onCancel }: { run: ScanProgressEvent; on
   );
 }
 
-function ScanSummary({ last }: { last: ScanFinishedEvent }) {
+function ScanSummary({ last }: { last: SavedScan }) {
   const s = last.stats;
   const notes: string[] = [];
   if (s.cancelled) notes.push("The analysis was cancelled, so totals are incomplete.");
@@ -42,8 +42,10 @@ function ScanSummary({ last }: { last: ScanFinishedEvent }) {
   if (s.accessDenied > 0)
     notes.push(`${count(s.accessDenied)} folders could not be read without administrator rights and are not counted.`);
   if (s.errors > 0) notes.push(`${count(s.errors)} folders could not be read because of errors.`);
+  const prev = last.previous;
   return (
     <div className="space-y-2 text-sm">
+      <p className="text-slate-500 dark:text-slate-400">Analyzed {formatDateTime(last.finishedAtMs)}</p>
       <p>
         <span className="font-semibold">{formatBytes(s.totalBytes)}</span> on disk in {count(s.files)} files and{" "}
         {count(s.dirs)} folders, analyzed in {(s.elapsedMs / 1000).toFixed(1)} s.
@@ -54,6 +56,12 @@ function ScanSummary({ last }: { last: ScanFinishedEvent }) {
           </span>
         )}
       </p>
+      {prev && (
+        <p>
+          Since the previous analysis on {formatDateTime(prev.finishedAtMs)}:{" "}
+          <span className="font-semibold tabular-nums">{formatDelta(s.totalBytes - prev.totalBytes)}</span>
+        </p>
+      )}
       {notes.map((n) => (
         <p key={n} className="flex items-start gap-2 text-amber-700 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -89,7 +97,23 @@ function statusLabel(status: NodeStatus): { text: string; icon: typeof Link2 } |
   }
 }
 
-function Row({ child, parentTotal, onOpen }: { child: DirChild; parentTotal: number; onOpen: () => void }) {
+function changeText(child: DirChild, compared: boolean): string {
+  if (!compared || child.status.state !== "complete") return "";
+  if (child.previousBytes === null) return "new or was under 1 MB";
+  return formatDelta(child.totalBytes - child.previousBytes);
+}
+
+function Row({
+  child,
+  parentTotal,
+  compared,
+  onOpen,
+}: {
+  child: DirChild;
+  parentTotal: number;
+  compared: boolean;
+  onOpen: () => void;
+}) {
   const label = statusLabel(child.status);
   const pct = percent(child.totalBytes, parentTotal);
   const openable = child.hasChildren && child.status.state === "complete";
@@ -119,6 +143,11 @@ function Row({ child, parentTotal, onOpen }: { child: DirChild; parentTotal: num
       <span className="w-12 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">
         {pct >= 0.1 ? `${pct.toFixed(1)}%` : ""}
       </span>
+      {compared && (
+        <span className="w-36 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">
+          {changeText(child, compared)}
+        </span>
+      )}
       <ChevronRight className={`size-4 shrink-0 ${openable ? "text-slate-400" : "invisible"}`} aria-hidden />
     </>
   );
@@ -148,7 +177,7 @@ function FolderExplorer({ scanId }: { scanId: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    ipc.scanListing(node).then(
+    ipc.scanListing(scanId, node).then(
       (l) => {
         if (!cancelled) {
           setListing(l);
@@ -186,11 +215,16 @@ function FolderExplorer({ scanId }: { scanId: number }) {
             </span>
           );
         })}
-        <span className="ml-auto tabular-nums text-slate-500 dark:text-slate-400">{formatBytes(listing.totalBytes)}</span>
+        <span className="ml-auto tabular-nums text-slate-500 dark:text-slate-400">
+          {formatBytes(listing.totalBytes)}
+          {listing.comparedTo && listing.previousTotalBytes !== null && (
+            <> ({formatDelta(listing.totalBytes - listing.previousTotalBytes)} since {formatDateTime(listing.comparedTo.finishedAtMs)})</>
+          )}
+        </span>
       </nav>
       <ul>
         {listing.children.map((c) => (
-          <Row key={c.id} child={c} parentTotal={listing.totalBytes} onOpen={() => setNode(c.id)} />
+          <Row key={c.id} child={c} parentTotal={listing.totalBytes} compared={listing.comparedTo !== null} onOpen={() => setNode(c.id)} />
         ))}
         {listing.filesHere > 0 && (
           <li className="flex items-center gap-3 px-2 py-1.5 text-sm text-slate-500 dark:text-slate-400">
@@ -200,12 +234,13 @@ function FolderExplorer({ scanId }: { scanId: number }) {
             </span>
             <span className="w-20 text-right tabular-nums">{formatBytes(listing.filesBytes)}</span>
             <span className="w-12" />
+            {listing.comparedTo && <span className="w-36" />}
             <span className="size-4" />
           </li>
         )}
         {listing.hiddenChildren > 0 && (
           <li className="px-2 py-1.5 text-sm text-slate-500 dark:text-slate-400">
-            {count(listing.hiddenChildren)} smaller folders ({formatBytes(listing.hiddenBytes)}) not listed
+            {count(listing.hiddenChildren)} smaller folders ({formatBytes(listing.hiddenBytes)}) not listed individually
           </li>
         )}
         {listing.children.length === 0 && listing.filesHere === 0 && (
@@ -221,7 +256,7 @@ function LargestFiles({ scanId }: { scanId: number }) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    ipc.scanLargestFiles().then(
+    ipc.scanLargestFiles(scanId).then(
       (f) => !cancelled && setFiles(f),
       (err: unknown) => !cancelled && setError(describeError(err)),
     );
@@ -247,17 +282,17 @@ function LargestFiles({ scanId }: { scanId: number }) {
   );
 }
 
-export function ScanResults({ last }: { last: ScanFinishedEvent }) {
+export function ScanResults({ last }: { last: SavedScan }) {
   return (
     <div className="space-y-4">
       <Panel title={`Analysis of ${last.root}`}>
         <ScanSummary last={last} />
       </Panel>
       <Panel title="Largest folders">
-        <FolderExplorer key={last.id} scanId={last.id} />
+        <FolderExplorer key={last.scanId} scanId={last.scanId} />
       </Panel>
       <Panel title="Largest files">
-        <LargestFiles scanId={last.id} />
+        <LargestFiles scanId={last.scanId} />
       </Panel>
     </div>
   );

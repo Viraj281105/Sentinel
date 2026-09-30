@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, percent } from "./format";
+import { formatBytes, formatDelta, percent } from "./format";
+
+describe("formatDelta", () => {
+  it("signs changes and hides noise below 1 MB", () => {
+    expect(formatDelta(3 * 1024 ** 3)).toBe("+3.00 GB");
+    expect(formatDelta(-300 * 1024 ** 2)).toBe("−300 MB");
+    expect(formatDelta(500 * 1024)).toBe("unchanged");
+    expect(formatDelta(-1)).toBe("unchanged");
+  });
+});
 
 describe("formatBytes", () => {
   it("uses Explorer-style binary units", () => {

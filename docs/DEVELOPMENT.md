@@ -64,6 +64,17 @@ Read-only; prints stats, the largest folders and files:
 cargo run --release -p sentinel-scanner --example scan -- C:\ 4
 ```
 
+Store benchmark (scans, then saves to a throwaway database in `%TEMP%` and deletes it):
+
+```powershell
+cargo run --release -p sentinel-store --example save_scan -- C:\
+```
+
+## Local data
+
+The app keeps its database at `%LOCALAPPDATA%\dev.sentinel.app\sentinel.db` and logs in
+`...\logs`. Deleting the folder while the app is closed resets all history.
+
 ## IPC types
 
 Rust types sent over IPC derive `ts_rs::TS` with `#[ts(export)]`. Running

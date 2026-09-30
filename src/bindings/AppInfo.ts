@@ -3,4 +3,12 @@
 /**
  * Basic facts about the running application.
  */
-export type AppInfo = { version: string, debugBuild: boolean, logDir: string, };
+export type AppInfo = { version: string, debugBuild: boolean, logDir: string, 
+/**
+ * Where analyses and history are stored; `null` when running without a database file.
+ */
+databasePath: string | null, 
+/**
+ * Why the database file could not be used; history is then lost on exit.
+ */
+databaseError: string | null, };

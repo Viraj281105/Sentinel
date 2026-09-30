@@ -45,6 +45,17 @@ export function Settings() {
               <dd className="truncate font-mono text-xs" title={info.data.logDir}>
                 {info.data.logDir}
               </dd>
+              <dt className="text-slate-500">Database</dt>
+              {info.data.databasePath ? (
+                <dd className="truncate font-mono text-xs" title={info.data.databasePath}>
+                  {info.data.databasePath}
+                </dd>
+              ) : (
+                <dd className="text-amber-700 dark:text-amber-300">
+                  Not saved to disk: history is lost when Sentinel closes.
+                  {info.data.databaseError && ` (${info.data.databaseError})`}
+                </dd>
+              )}
             </dl>
           )}
         </Panel>

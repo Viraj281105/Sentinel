@@ -1,8 +1,9 @@
 import { AlertTriangle, HardDrive, Usb, Network, Disc, MemoryStick, HelpCircle } from "lucide-react";
 import type { ReactNode } from "react";
+import type { DriveTrend } from "../bindings/DriveTrend";
 import type { Drive } from "../bindings/Drive";
 import type { DriveKind } from "../bindings/DriveKind";
-import { formatBytes, percent } from "../lib/format";
+import { formatBytes, formatDate, formatDelta, percent } from "../lib/format";
 
 const KIND: Record<DriveKind, { label: string; icon: typeof HardDrive }> = {
   fixed: { label: "Local disk", icon: HardDrive },
@@ -56,7 +57,7 @@ function UsageMeter({ used, total, low, name }: { used: number; total: number; l
   );
 }
 
-export function DriveCard({ drive, action }: { drive: Drive; action?: ReactNode }) {
+export function DriveCard({ drive, action, trend }: { drive: Drive; action?: ReactNode; trend?: DriveTrend }) {
   const { icon: Icon, label: kindLabel } = KIND[drive.kind];
   const name = driveName(drive);
   const space = drive.space;
@@ -103,6 +104,11 @@ export function DriveCard({ drive, action }: { drive: Drive; action?: ReactNode 
               <dd className="tabular-nums">{formatBytes(space.totalBytes)}</dd>
             </div>
           </dl>
+          {trend && (
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Free space {formatDelta(trend.freeChangeBytes)} since {formatDate(trend.sinceMs)}
+            </p>
+          )}
           {space.availableBytes < space.freeBytes && (
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               {formatBytes(space.availableBytes)} available to you (disk quota applies).

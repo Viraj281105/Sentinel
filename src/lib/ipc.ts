@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AppInfo } from "../bindings/AppInfo";
 import type { DirListing } from "../bindings/DirListing";
 import type { Drive } from "../bindings/Drive";
+import type { DriveTrend } from "../bindings/DriveTrend";
 import type { LargeFile } from "../bindings/LargeFile";
 import type { ProtectedLocation } from "../bindings/ProtectedLocation";
 import type { ScanStatus } from "../bindings/ScanStatus";
@@ -13,11 +14,12 @@ export const ipc = {
   appInfo: () => invoke<AppInfo>("app_info"),
   protectedLocations: () => invoke<ProtectedLocation[]>("protected_locations"),
   listDrives: () => invoke<Drive[]>("list_drives"),
+  driveTrends: () => invoke<DriveTrend[]>("drive_trends"),
   startScan: (root: string) => invoke<number>("start_scan", { root }),
   cancelScan: (id: number) => invoke<boolean>("cancel_scan", { id }),
   scanStatus: () => invoke<ScanStatus>("scan_status"),
-  scanListing: (node: number) => invoke<DirListing>("scan_listing", { node }),
-  scanLargestFiles: () => invoke<LargeFile[]>("scan_largest_files"),
+  scanListing: (scanId: number, node: number) => invoke<DirListing>("scan_listing", { scanId, node }),
+  scanLargestFiles: (scanId: number) => invoke<LargeFile[]>("scan_largest_files", { scanId }),
 };
 
 /** Turn whatever a rejected command produced into text a person can read. */

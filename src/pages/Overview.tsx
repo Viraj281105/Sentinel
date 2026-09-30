@@ -1,11 +1,12 @@
 import { AlertTriangle } from "lucide-react";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
-import { formatBytes } from "../lib/format";
+import { formatBytes, formatDate, formatDelta } from "../lib/format";
 import { ipc } from "../lib/ipc";
 import { useCommand } from "../lib/useCommand";
 
 function StorageSummary() {
   const drives = useCommand(ipc.listDrives);
+  const trends = useCommand(ipc.driveTrends);
   if (drives.status === "loading") return <Loading />;
   if (drives.status === "error") return <ErrorNote message={drives.message} />;
 
@@ -13,6 +14,7 @@ function StorageSummary() {
   const low = drives.data.filter((d) => d.space?.lowSpace);
   const measured = drives.data.filter((d) => d.space);
   const totalFree = measured.reduce((sum, d) => sum + (d.space?.freeBytes ?? 0), 0);
+  const systemTrend = trends.status === "ok" ? trends.data.find((t) => t.root === system?.root) : undefined;
   return (
     <div className="space-y-3 text-sm">
       {system?.space ? (
@@ -23,6 +25,13 @@ function StorageSummary() {
         </p>
       ) : (
         <p className="text-slate-500">The Windows drive could not be measured.</p>
+      )}
+      {systemTrend && (
+        <p>
+          Free space on this drive changed by{" "}
+          <span className="font-semibold tabular-nums">{formatDelta(systemTrend.freeChangeBytes)}</span> since{" "}
+          {formatDate(systemTrend.sinceMs)}.
+        </p>
       )}
       <p className="text-slate-500 dark:text-slate-400">
         {formatBytes(totalFree)} free across {measured.length} measured{" "}

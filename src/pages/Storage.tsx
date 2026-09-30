@@ -8,6 +8,7 @@ import { useScan } from "../lib/useScan";
 
 export function Storage() {
   const drives = useCommand(ipc.listDrives);
+  const trends = useCommand(ipc.driveTrends);
   const { state: scan, start, cancel } = useScan();
   const busy = !scan.loaded || scan.running !== null;
 
@@ -28,6 +29,7 @@ export function Storage() {
               <DriveCard
                 key={d.root}
                 drive={d}
+                trend={trends.status === "ok" ? trends.data.find((t) => t.root === d.root) : undefined}
                 action={
                   d.status.state === "ready" && (
                     <button

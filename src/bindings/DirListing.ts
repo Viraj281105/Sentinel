@@ -2,16 +2,25 @@
 import type { Crumb } from "./Crumb";
 import type { DirChild } from "./DirChild";
 import type { NodeStatus } from "./NodeStatus";
+import type { ScanRef } from "./ScanRef";
 
 /**
- * One level of a finished scan.
+ * One level of a saved scan.
  */
-export type DirListing = { scanId: number, node: number, path: string, crumbs: Array<Crumb>, totalBytes: number, 
+export type DirListing = { scanId: number, node: number, crumbs: Array<Crumb>, totalBytes: number, 
 /**
  * Bytes in files directly inside this folder (not in subfolders).
  */
 filesBytes: number, filesHere: number, status: NodeStatus, children: Array<DirChild>, 
 /**
- * Subfolders not listed because of [`MAX_CHILDREN`].
+ * Subfolders not listed: too small to store, or beyond the listing limit.
  */
-hiddenChildren: number, hiddenBytes: number, };
+hiddenChildren: number, hiddenBytes: number, 
+/**
+ * The analysis this listing is compared with, if any.
+ */
+comparedTo: ScanRef | null, 
+/**
+ * This folder's size in that analysis, if it was stored there.
+ */
+previousTotalBytes: number | null, };

@@ -1,4 +1,5 @@
 use sentinel_scanner::scan::{LargeFile, NodeId, ScanOptions};
+use sentinel_store::ScanId;
 use tauri::{AppHandle, Emitter, State};
 
 use super::error::CommandError;
@@ -48,22 +49,25 @@ pub(crate) fn cancel_scan(state: State<'_, AppState>, id: u64) -> bool {
     state.scans.cancel(id)
 }
 
+/// The running scan, if any, and the most recent saved analysis.
 #[tauri::command]
-pub(crate) fn scan_status(state: State<'_, AppState>) -> ScanStatus {
+pub(crate) fn scan_status(state: State<'_, AppState>) -> Result<ScanStatus, CommandError> {
     state.scans.status()
 }
 
 #[tauri::command]
 pub(crate) fn scan_listing(
     state: State<'_, AppState>,
+    scan_id: ScanId,
     node: NodeId,
 ) -> Result<DirListing, CommandError> {
-    state.scans.listing(node)
+    state.scans.listing(scan_id, node)
 }
 
 #[tauri::command]
 pub(crate) fn scan_largest_files(
     state: State<'_, AppState>,
+    scan_id: ScanId,
 ) -> Result<Vec<LargeFile>, CommandError> {
-    state.scans.largest_files()
+    state.scans.largest_files(scan_id)
 }

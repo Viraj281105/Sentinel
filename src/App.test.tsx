@@ -14,7 +14,13 @@ const locations: ProtectedLocation[] = [
   { path: String.raw`C:\Users\u\Documents`, reason: "Documents" },
   { path: String.raw`C:\Windows`, reason: "Windows system files" },
 ];
-const info: AppInfo = { version: "0.1.0", debugBuild: false, logDir: String.raw`C:\logs` };
+const info: AppInfo = {
+  version: "0.1.0",
+  debugBuild: false,
+  logDir: String.raw`C:\logs`,
+  databasePath: String.raw`C:\data\sentinel.db`,
+  databaseError: null,
+};
 const drives: Drive[] = [
   {
     root: "C:\\",
@@ -43,6 +49,7 @@ function mockBackend(opts: { fail?: boolean; drivesError?: CommandError } = {}) 
     if (cmd === "protected_locations") return locations;
     if (cmd === "app_info") return info;
     if (cmd === "scan_status") return { running: null, last: null };
+    if (cmd === "drive_trends") return [{ root: "C:\\", sinceMs: Date.UTC(2026, 8, 1), freeChangeBytes: -2 * GB, samples: 5 }];
     if (cmd === "list_drives") {
       if (opts.drivesError) throw opts.drivesError;
       return drives;
@@ -58,6 +65,7 @@ describe("App", () => {
     expect(await screen.findByText("30.0 GB")).toBeInTheDocument();
     expect(screen.getByText(/free on the Windows drive \(C:\)/)).toBeInTheDocument();
     expect(screen.getByText(/C: is low on space/)).toBeInTheDocument();
+    expect(await screen.findByText("−2.00 GB")).toBeInTheDocument();
     expect(await screen.findByText("2")).toBeInTheDocument();
   });
 
@@ -105,6 +113,7 @@ describe("App", () => {
     expect(await screen.findByText(String.raw`C:\Windows`)).toBeInTheDocument();
     expect(screen.getByText("Windows system files")).toBeInTheDocument();
     expect(await screen.findByText(String.raw`C:\logs`)).toBeInTheDocument();
+    expect(screen.getByText(String.raw`C:\data\sentinel.db`)).toBeInTheDocument();
   });
 
   it("explains backend failures in plain language", async () => {

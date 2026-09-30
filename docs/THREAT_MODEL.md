@@ -45,6 +45,7 @@ in `sentinel-cleanup`.
 | T10 | Malicious project files (e.g. crafted `package.json`, `.git` config) triggering code execution during detection | Detectors parse only; never run project scripts, package managers, or `git` hooks on untrusted trees; parsers have size limits |
 | T11 | Compromised package manager output when querying versions/caches | Prefer reading files/registry over invoking tools; when invoking, use absolute resolved paths, fixed args, timeouts, no shell |
 | T12 | Registry manipulation / bogus uninstall entries | Registry treated as untrusted display data; never used as a path to delete |
+| T19 | Local database disclosure or tampering (another local process reads or edits `sentinel.db`) | Stores metadata only (folder names, 50 largest file paths, sizes, times), never contents or secrets; lives in the per-user `%LOCALAPPDATA%` with default user-only ACLs; values read back are display data and are never used as paths to act on (the future executor revalidates everything through `sentinel-safety`); corrupt rows surface as errors, not crashes |
 | T13 | Tampered audit log or quarantine | Append-only log with hash chaining; quarantine manifest validated on restore; restore paths re-checked by policy |
 | T14 | Webview compromise (XSS) invoking commands | Strict CSP, no remote content, minimal Tauri capability allowlist, commands take opaque plan IDs not raw paths |
 | T15 | Command injection | No shell invocation with constructed strings; typed args only |

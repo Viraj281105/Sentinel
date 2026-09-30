@@ -137,10 +137,12 @@ Crates are created only when their first real feature lands (no empty scaffoldin
 - Blocking work (`list_drives`) runs on `spawn_blocking` so it never stalls the UI thread.
 - `scans::ScanManager` owns background scans: one at a time (`busy` otherwise), on a
   dedicated thread, with a reporter thread emitting `scan-progress` every 250 ms and a
-  final `scan-finished` / `scan-failed` event. The latest finished `ScanTree` is kept in
-  memory; the UI fetches one level at a time (`scan_listing`, top 200 children plus a
-  summary of the rest) and `scan_largest_files`, so the full tree never crosses IPC.
-  `scan_status` lets a remounted page recover a running scan. Events go through a
+  final `scan-finished` / `scan-failed` event. A finished tree is saved to SQLite and
+  released from memory; the UI fetches one level at a time from the database
+  (`scan_listing(scanId, node)`, top 200 children plus a summary of the rest, each with its
+  size in the previous analysis) and `scan_largest_files(scanId)`, so the full tree never
+  crosses IPC. `scan_status` returns any running scan and the latest saved one, so results
+  survive restarts. `drive_trends` reports free-space change over 30 days. Events go through a
   `ScanEvents` trait so the manager is tested without Tauri.
 
 ### Implemented: `sentinel-scanner`
@@ -198,12 +200,40 @@ use Vitest + Testing Library with `@tauri-apps/api/mocks` at the IPC boundary on
 | Plugins | Declarative (data-only) first; capability manifest; no native code initially | Limits blast radius |
 | Elevation | App runs unelevated; privileged actions (Windows TEMP, Update cache) go through a separate, minimal elevated helper *(planned, needs security review)* | Least privilege |
 
-## 4. Data model (planned, SQLite)
+## 4. Data model (SQLite, `sentinel-store`)
 
-`scans`, `dir_nodes` (path, size, mtime, category, scan_id), `drives_history`,
-`projects`, `runtimes`, `project_runtime_edges`, `software`, `cleanup_operations`,
-`audit_log` (append-only), `quarantine_items`, `settings`, `plugins`. No file contents
-or secrets are ever stored.
+Database: `%LOCALAPPDATA%\dev.sentinel.app\sentinel.db` (WAL, foreign keys on,
+`synchronous=NORMAL`). Migrations are append-only SQL scripts; the applied count is
+`PRAGMA user_version`, and a database from a newer build is refused rather than
+modified. If the file cannot be opened the app runs on an in-memory database and says
+so in Settings.
+
+Implemented (schema v1):
+
+| Table | Contents |
+|---|---|
+| `scans` | root, start/finish time, all `ScanStats`, the pruning threshold |
+| `scan_nodes` | per scan: node id, parent, name (NOCASE), subtree and own bytes, file counts, child count, pruned-children count and bytes, status (JSON) |
+| `scan_largest_files` | per scan: ranked path and size |
+| `drive_snapshots` | root, time, total and free bytes (at most hourly, recorded when drives are listed) |
+
+Scan trees are stored down to 1 MiB: arena order is pre-order and subtree sizes never
+grow away from the root, so one forward pass keeps a connected tree; each kept parent
+records how many smaller folders were dropped and their size. Non-complete folders
+(links, access denied, skipped) are always kept so the explanation survives. Ten scans
+are kept per root. A full C: scan (270 k folders) stores in about 32 ms as ~2.4 MiB.
+
+Growth attribution: a listing is matched by folder path against the previous scan of the
+same root, giving each folder's previous size (`null` when it is new or was under the
+threshold).
+
+Planned tables: `projects`, `runtimes`, `project_runtime_edges`, `software`,
+`cleanup_operations`, `audit_log` (append-only), `quarantine_items`, `settings`,
+`plugins`.
+
+Stored data is metadata only: folder names, the paths of the 50 largest files, sizes,
+counts and times. No file contents or secrets are ever read, so none can be stored. The
+database stays on this machine.
 
 ## 5. Honesty constraints
 

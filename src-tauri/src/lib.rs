@@ -5,6 +5,7 @@
 //! `sentinel-*` crates.
 
 mod commands;
+mod db;
 mod logging;
 mod scans;
 
@@ -17,6 +18,7 @@ use tauri::Manager;
 pub(crate) struct AppState {
     pub log_dir: PathBuf,
     pub policy: Policy,
+    pub db: db::Db,
     pub scans: scans::ScanManager,
 }
 
@@ -26,10 +28,12 @@ pub fn run() {
             let log_dir = app.path().app_log_dir()?;
             let guard = logging::init(&log_dir)?;
             app.manage(guard);
+            let db = db::Db::open(&app.path().app_local_data_dir()?)?;
             app.manage(AppState {
                 log_dir,
                 policy: Policy::for_system(),
-                scans: scans::ScanManager::default(),
+                scans: scans::ScanManager::new(db.clone()),
+                db,
             });
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sentinel started");
             Ok(())
@@ -38,6 +42,7 @@ pub fn run() {
             commands::system::app_info,
             commands::safety::protected_locations,
             commands::storage::list_drives,
+            commands::storage::drive_trends,
             commands::scan::start_scan,
             commands::scan::cancel_scan,
             commands::scan::scan_status,

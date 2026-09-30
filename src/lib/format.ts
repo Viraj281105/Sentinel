@@ -17,6 +17,25 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(digits)} ${UNITS[unit]}`;
 }
 
+/** Changes smaller than this are shown as "unchanged" (it is also the smallest folder
+ *  size stored for comparison, so finer changes are not reliably known). */
+export const CHANGE_THRESHOLD_BYTES = 1024 * 1024;
+
+/** Signed size change, e.g. "+1.20 GB" or "−300 MB" (true minus sign). */
+export function formatDelta(bytes: number): string {
+  if (!Number.isFinite(bytes)) return "—";
+  if (Math.abs(bytes) < CHANGE_THRESHOLD_BYTES) return "unchanged";
+  return `${bytes > 0 ? "+" : "−"}${formatBytes(Math.abs(bytes))}`;
+}
+
+export function formatDateTime(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+export function formatDate(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, { dateStyle: "medium" });
+}
+
 export function percent(part: number, whole: number): number {
   return whole > 0 ? (part / whole) * 100 : 0;
 }

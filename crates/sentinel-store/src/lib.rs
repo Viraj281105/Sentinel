@@ -457,6 +457,15 @@ impl Store {
         Ok(true)
     }
 
+    /// Drive roots that have at least one snapshot.
+    pub fn snapshot_roots(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT root FROM drive_snapshots ORDER BY root")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Snapshots for a drive, oldest first, taken at or after `since_ms`.
     pub fn drive_history(&self, root: &str, since_ms: i64) -> Result<Vec<DriveSnapshot>> {
         let mut stmt = self.conn.prepare(

@@ -1,36 +1,70 @@
-//! Owns the background directory scan: at most one runs at a time, and the most recent
-//! finished result is kept in memory for drill-down. The full tree never crosses IPC;
-//! the frontend asks for one folder level at a time.
+//! Owns background directory scans: at most one runs at a time. Finished scans are saved
+//! to the local database and all drill-down is served from there, so results survive
+//! restarts and the in-memory tree is released as soon as it is saved. The full tree
+//! never crosses IPC; the frontend asks for one folder level at a time.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use sentinel_scanner::scan::{
-    LargeFile, NodeId, NodeStatus, ScanControl, ScanOptions, ScanProgress, ScanStats, ScanTree,
-    scan,
+    LargeFile, NodeId, NodeStatus, ScanControl, ScanOptions, ScanProgress, ScanStats, scan,
 };
+use sentinel_store::{Retention, ScanId, ScanRecord};
 use serde::Serialize;
 use ts_rs::TS;
 
 use crate::commands::error::{CommandError, ErrorKind};
+use crate::db::{Db, now_ms};
 
 pub(crate) const PROGRESS_EVENT: &str = "scan-progress";
 pub(crate) const FINISHED_EVENT: &str = "scan-finished";
 pub(crate) const FAILED_EVENT: &str = "scan-failed";
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
-/// Children beyond this many (smallest first) are summarized, not listed.
-const MAX_CHILDREN: usize = 200;
+/// Children beyond this many (largest first) are summarized, not listed.
+const MAX_CHILDREN: u32 = 200;
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ScanProgressEvent {
+    /// Id of the running job (used to cancel it).
     #[ts(type = "number")]
     pub id: u64,
     pub root: String,
     pub progress: ScanProgress,
+}
+
+/// A reference to an earlier saved scan, for comparison.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ScanRef {
+    #[ts(type = "number")]
+    pub scan_id: ScanId,
+    #[ts(type = "number")]
+    pub finished_at_ms: i64,
+    #[ts(type = "number")]
+    pub total_bytes: u64,
+}
+
+/// A scan saved in the local database.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SavedScan {
+    #[ts(type = "number")]
+    pub scan_id: ScanId,
+    pub root: String,
+    #[ts(type = "number")]
+    pub finished_at_ms: i64,
+    pub stats: ScanStats,
+    /// Folders smaller than this were not stored individually.
+    #[ts(type = "number")]
+    pub min_folder_bytes: u64,
+    pub previous: Option<ScanRef>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -39,8 +73,7 @@ pub struct ScanProgressEvent {
 pub struct ScanFinishedEvent {
     #[ts(type = "number")]
     pub id: u64,
-    pub root: String,
-    pub stats: ScanStats,
+    pub scan: SavedScan,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -58,7 +91,7 @@ pub struct ScanFailedEvent {
 #[ts(export)]
 pub struct ScanStatus {
     pub running: Option<ScanProgressEvent>,
-    pub last: Option<ScanFinishedEvent>,
+    pub last: Option<SavedScan>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -81,17 +114,19 @@ pub struct DirChild {
     pub file_count: u64,
     pub has_children: bool,
     pub status: NodeStatus,
+    /// Size in the previous analysis, if that analysis stored this folder.
+    #[ts(type = "number | null")]
+    pub previous_bytes: Option<u64>,
 }
 
-/// One level of a finished scan.
+/// One level of a saved scan.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DirListing {
     #[ts(type = "number")]
-    pub scan_id: u64,
+    pub scan_id: ScanId,
     pub node: NodeId,
-    pub path: String,
     pub crumbs: Vec<Crumb>,
     #[ts(type = "number")]
     pub total_bytes: u64,
@@ -102,11 +137,16 @@ pub struct DirListing {
     pub files_here: u64,
     pub status: NodeStatus,
     pub children: Vec<DirChild>,
-    /// Subfolders not listed because of [`MAX_CHILDREN`].
+    /// Subfolders not listed: too small to store, or beyond the listing limit.
     #[ts(type = "number")]
     pub hidden_children: u64,
     #[ts(type = "number")]
     pub hidden_bytes: u64,
+    /// The analysis this listing is compared with, if any.
+    pub compared_to: Option<ScanRef>,
+    /// This folder's size in that analysis, if it was stored there.
+    #[ts(type = "number | null")]
+    pub previous_total_bytes: Option<u64>,
 }
 
 struct Running {
@@ -115,16 +155,10 @@ struct Running {
     control: Arc<ScanControl>,
 }
 
-struct Finished {
-    id: u64,
-    tree: ScanTree,
-}
-
 #[derive(Default)]
 struct Slot {
     next_id: u64,
     running: Option<Running>,
-    last: Option<Arc<Finished>>,
 }
 
 /// Something that can receive scan events. Implemented for the Tauri app handle; tests
@@ -135,19 +169,47 @@ pub(crate) trait ScanEvents: Send + Sync + 'static {
     fn failed(&self, e: ScanFailedEvent);
 }
 
-#[derive(Default)]
 pub(crate) struct ScanManager {
     slot: Arc<Mutex<Slot>>,
+    db: Db,
+    retention: Retention,
 }
 
 fn lock(slot: &Mutex<Slot>) -> MutexGuard<'_, Slot> {
-    // A panic while holding the lock cannot leave `Slot` logically broken (each field is
-    // replaced wholesale), so recover rather than propagate poison.
+    // Each field of `Slot` is replaced wholesale, so a poisoned lock is still coherent.
     slot.lock().unwrap_or_else(|p| p.into_inner())
 }
 
+fn scan_ref(r: &ScanRecord) -> ScanRef {
+    ScanRef {
+        scan_id: r.id,
+        finished_at_ms: r.finished_at_ms,
+        total_bytes: r.stats.total_bytes,
+    }
+}
+
+fn saved(db: &Db, rec: ScanRecord) -> Result<SavedScan, CommandError> {
+    let previous = db.lock().previous_scan(rec.id)?;
+    Ok(SavedScan {
+        scan_id: rec.id,
+        root: rec.root,
+        finished_at_ms: rec.finished_at_ms,
+        stats: rec.stats,
+        min_folder_bytes: rec.min_node_bytes,
+        previous: previous.as_ref().map(scan_ref),
+    })
+}
+
 impl ScanManager {
-    /// Start scanning `root` in the background. Returns the scan id.
+    pub(crate) fn new(db: Db) -> Self {
+        Self {
+            slot: Arc::default(),
+            db,
+            retention: Retention::default(),
+        }
+    }
+
+    /// Start scanning `root` in the background. Returns the job id.
     pub(crate) fn start(
         &self,
         root: &str,
@@ -184,32 +246,41 @@ impl ScanManager {
         spawn_progress_reporter(id, root, &control, &events, &done);
 
         let slot = Arc::clone(&self.slot);
+        let db = self.db.clone();
+        let retention = self.retention;
         let root_s = root.to_owned();
         let spawned = std::thread::Builder::new()
             .name(format!("sentinel-scan-{id}"))
             .spawn(move || {
-                let result = scan(&path, &options, &control);
+                let started = now_ms();
+                let outcome = scan(&path, &options, &control)
+                    .map_err(|e| e.to_string())
+                    .and_then(|tree| {
+                        let finished = now_ms();
+                        let scan_id = db
+                            .lock()
+                            .save_scan(&tree, started, finished, retention)
+                            .map_err(|e| {
+                                format!("the analysis finished but could not be saved: {e}")
+                            })?;
+                        drop(tree);
+                        let rec = db
+                            .lock()
+                            .scan(scan_id)
+                            .map_err(|e| e.to_string())?
+                            .ok_or_else(|| "the saved analysis disappeared".to_owned())?;
+                        saved(&db, rec).map_err(|e| e.message)
+                    });
                 done.store(true, Ordering::Relaxed);
-                let mut guard = lock(&slot);
-                guard.running = None;
-                match result {
-                    Ok(tree) => {
-                        let stats = tree.stats.clone();
-                        guard.last = Some(Arc::new(Finished { id, tree }));
-                        drop(guard);
-                        events.finished(ScanFinishedEvent {
-                            id,
-                            root: root_s,
-                            stats,
-                        });
-                    }
-                    Err(err) => {
-                        drop(guard);
-                        tracing::warn!(id, error = %err, "scan failed");
+                lock(&slot).running = None;
+                match outcome {
+                    Ok(scan) => events.finished(ScanFinishedEvent { id, scan }),
+                    Err(message) => {
+                        tracing::warn!(id, error = %message, "scan failed");
                         events.failed(ScanFailedEvent {
                             id,
                             root: root_s,
-                            message: err.to_string(),
+                            message,
                         });
                     }
                 }
@@ -233,36 +304,88 @@ impl ScanManager {
         }
     }
 
-    pub(crate) fn status(&self) -> ScanStatus {
-        let slot = lock(&self.slot);
-        ScanStatus {
-            running: slot.running.as_ref().map(|r| ScanProgressEvent {
+    pub(crate) fn status(&self) -> Result<ScanStatus, CommandError> {
+        let running = lock(&self.slot)
+            .running
+            .as_ref()
+            .map(|r| ScanProgressEvent {
                 id: r.id,
                 root: r.root.clone(),
                 progress: r.control.progress(),
-            }),
-            last: slot.last.as_ref().map(|f| ScanFinishedEvent {
-                id: f.id,
-                root: f.tree.root.display().to_string(),
-                stats: f.tree.stats.clone(),
-            }),
+            });
+        let latest = self.db.lock().latest_scan()?;
+        Ok(ScanStatus {
+            running,
+            last: latest.map(|r| saved(&self.db, r)).transpose()?,
+        })
+    }
+
+    pub(crate) fn listing(
+        &self,
+        scan_id: ScanId,
+        node: NodeId,
+    ) -> Result<DirListing, CommandError> {
+        let store = self.db.lock();
+        let not_found = || {
+            CommandError::new(
+                ErrorKind::NotFound,
+                "That folder is not part of a saved analysis.",
+            )
+        };
+        let n = store.node(scan_id, node)?.ok_or_else(not_found)?;
+        let crumbs = store.crumbs(scan_id, node)?;
+        let children = store.children(scan_id, node, MAX_CHILDREN)?;
+        let (beyond, beyond_bytes) = store.children_beyond(scan_id, node, MAX_CHILDREN)?;
+
+        // Compare with the previous analysis of the same root by folder path.
+        let previous = store.previous_scan(scan_id)?;
+        let mut previous_total = None;
+        let mut previous_children: HashMap<String, u64> = HashMap::new();
+        if let Some(prev) = &previous {
+            let names: Vec<&str> = crumbs.iter().skip(1).map(|c| c.name.as_str()).collect();
+            if let Some(pn) = store.find_by_names(prev.id, &names)? {
+                previous_total = store.node(prev.id, pn)?.map(|p| p.total_bytes);
+                for c in store.children(prev.id, pn, u32::MAX)? {
+                    previous_children.insert(c.name.to_lowercase(), c.total_bytes);
+                }
+            }
         }
+
+        Ok(DirListing {
+            scan_id,
+            node,
+            crumbs: crumbs
+                .into_iter()
+                .map(|c| Crumb {
+                    id: c.id,
+                    name: c.name,
+                })
+                .collect(),
+            total_bytes: n.total_bytes,
+            files_bytes: n.own_bytes,
+            files_here: n.own_files,
+            status: n.status,
+            children: children
+                .into_iter()
+                .map(|c| DirChild {
+                    previous_bytes: previous_children.get(&c.name.to_lowercase()).copied(),
+                    id: c.id,
+                    name: c.name,
+                    total_bytes: c.total_bytes,
+                    file_count: c.file_count,
+                    has_children: c.child_count > 0,
+                    status: c.status,
+                })
+                .collect(),
+            hidden_children: n.pruned_children + beyond,
+            hidden_bytes: n.pruned_bytes + beyond_bytes,
+            compared_to: previous.as_ref().map(scan_ref),
+            previous_total_bytes: previous_total,
+        })
     }
 
-    fn last(&self) -> Result<Arc<Finished>, CommandError> {
-        lock(&self.slot)
-            .last
-            .clone()
-            .ok_or_else(|| CommandError::new(ErrorKind::NotFound, "No finished analysis yet."))
-    }
-
-    pub(crate) fn listing(&self, node: NodeId) -> Result<DirListing, CommandError> {
-        let last = self.last()?;
-        listing_of(last.id, &last.tree, node)
-    }
-
-    pub(crate) fn largest_files(&self) -> Result<Vec<LargeFile>, CommandError> {
-        Ok(self.last()?.tree.largest_files.clone())
+    pub(crate) fn largest_files(&self, scan_id: ScanId) -> Result<Vec<LargeFile>, CommandError> {
+        Ok(self.db.lock().largest_files(scan_id)?)
     }
 }
 
@@ -295,67 +418,6 @@ fn spawn_progress_reporter(
         // Progress is cosmetic; the scan itself still runs and reports completion.
         tracing::warn!(id, error = %err, "could not start progress reporter");
     }
-}
-
-fn listing_of(scan_id: u64, tree: &ScanTree, node: NodeId) -> Result<DirListing, CommandError> {
-    let n = tree.node(node).ok_or_else(|| {
-        CommandError::new(
-            ErrorKind::NotFound,
-            "That folder is not part of the latest analysis.",
-        )
-    })?;
-    let mut crumbs = Vec::new();
-    let mut cur = Some(node);
-    while let Some(i) = cur {
-        let c = &tree.nodes[i as usize];
-        crumbs.push(Crumb {
-            id: i,
-            name: c.name.clone(),
-        });
-        cur = c.parent;
-    }
-    crumbs.reverse();
-
-    let ordered = tree.children_by_size(node);
-    let (shown, hidden) = ordered.split_at(ordered.len().min(MAX_CHILDREN));
-    let children = shown
-        .iter()
-        .map(|&c| {
-            let k = &tree.nodes[c as usize];
-            DirChild {
-                id: c,
-                name: k.name.clone(),
-                total_bytes: k.total_bytes,
-                file_count: k.file_count,
-                has_children: !k.children.is_empty(),
-                status: k.status.clone(),
-            }
-        })
-        .collect();
-    let path = tree
-        .path_of(node)
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
-    Ok(DirListing {
-        scan_id,
-        node,
-        path,
-        crumbs,
-        total_bytes: n.total_bytes,
-        files_bytes: n.own_bytes,
-        files_here: n.file_count
-            - n.children
-                .iter()
-                .map(|&c| tree.nodes[c as usize].file_count)
-                .sum::<u64>(),
-        status: n.status.clone(),
-        children,
-        hidden_children: hidden.len() as u64,
-        hidden_bytes: hidden
-            .iter()
-            .map(|&c| tree.nodes[c as usize].total_bytes)
-            .sum(),
-    })
 }
 
 #[cfg(test)]
@@ -404,51 +466,87 @@ mod tests {
         }
     }
 
+    const MB: usize = 1024 * 1024;
+
+    fn put(path: &std::path::Path, bytes: usize) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, vec![0u8; bytes]).unwrap();
+    }
+
+    /// big/inner/f (3 MB), small/f (100 B, pruned), top.bin
     fn fixture() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("big").join("inner")).unwrap();
-        std::fs::write(
-            dir.path().join("big").join("inner").join("f"),
-            vec![0u8; 9000],
-        )
-        .unwrap();
-        std::fs::create_dir(dir.path().join("small")).unwrap();
-        std::fs::write(dir.path().join("small").join("f"), vec![0u8; 100]).unwrap();
-        std::fs::write(dir.path().join("top.bin"), vec![0u8; 50]).unwrap();
+        put(&dir.path().join("big").join("inner").join("f"), 3 * MB);
+        put(&dir.path().join("small").join("f"), 100);
+        put(&dir.path().join("top.bin"), 50);
         dir
     }
 
-    #[test]
-    fn runs_in_background_and_supports_drill_down() {
-        let dir = fixture();
-        let mgr = ScanManager::default();
+    fn run(mgr: &ScanManager, root: &std::path::Path) -> SavedScan {
         let (rec, rx) = recorder();
-        let root = dir.path().to_str().unwrap();
-        let id = mgr.start(root, ScanOptions::default(), rec).unwrap();
-        let done = wait_done(&rx).unwrap();
+        let id = mgr
+            .start(root.to_str().unwrap(), ScanOptions::default(), rec)
+            .unwrap();
+        let done = wait_done(&rx).unwrap_or_else(|e| panic!("scan failed: {}", e.message));
         assert_eq!(done.id, id);
-        assert_eq!(done.stats.files, 3);
-        assert!(mgr.status().running.is_none());
-        assert_eq!(mgr.status().last.unwrap().id, id);
+        done.scan
+    }
 
-        let top = mgr.listing(ScanTree::ROOT).unwrap();
+    #[test]
+    fn saves_scans_and_serves_drill_down_from_the_database() {
+        let dir = fixture();
+        let mgr = ScanManager::new(Db::in_memory());
+        let s = run(&mgr, dir.path());
+        assert_eq!(s.stats.files, 3);
+        assert!(s.previous.is_none());
+        let status = mgr.status().unwrap();
+        assert!(status.running.is_none());
+        assert_eq!(status.last.unwrap().scan_id, s.scan_id);
+
+        let top = mgr.listing(s.scan_id, 0).unwrap();
         let names: Vec<_> = top.children.iter().map(|c| c.name.as_str()).collect();
-        assert_eq!(names, ["big", "small"]);
+        assert_eq!(names, ["big"], "small folder is pruned");
+        assert_eq!((top.hidden_children, top.hidden_bytes > 0), (1, true));
         assert_eq!(top.files_here, 1);
-        assert_eq!(top.crumbs.len(), 1);
+        assert!(top.compared_to.is_none());
 
-        let big = mgr.listing(top.children[0].id).unwrap();
+        let big = mgr.listing(s.scan_id, top.children[0].id).unwrap();
         assert_eq!(big.crumbs.last().unwrap().name, "big");
-        assert!(big.path.ends_with("big"));
         assert!(!big.children[0].has_children);
-        assert!(mgr.listing(9999).is_err());
-        assert_eq!(mgr.largest_files().unwrap().len(), 3);
+        assert_eq!(
+            mgr.listing(s.scan_id, 9999).unwrap_err().kind,
+            ErrorKind::NotFound
+        );
+        assert_eq!(mgr.largest_files(s.scan_id).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn compares_with_the_previous_analysis_by_path() {
+        let dir = fixture();
+        let mgr = ScanManager::new(Db::in_memory());
+        let first = run(&mgr, dir.path());
+        put(&dir.path().join("big").join("inner").join("g"), 2 * MB);
+        put(&dir.path().join("fresh").join("f"), 2 * MB);
+        let second = run(&mgr, dir.path());
+        assert_eq!(second.previous.as_ref().unwrap().scan_id, first.scan_id);
+
+        let top = mgr.listing(second.scan_id, 0).unwrap();
+        assert_eq!(top.compared_to.unwrap().scan_id, first.scan_id);
+        let by_name = |n: &str| top.children.iter().find(|c| c.name == n).unwrap();
+        let big = by_name("big");
+        assert!(big.previous_bytes.unwrap() + (2 * MB) as u64 <= big.total_bytes + 4096);
+        assert!(by_name("fresh").previous_bytes.is_none());
+        assert!(top.previous_total_bytes.unwrap() < top.total_bytes);
+
+        let inner_id = mgr.listing(second.scan_id, big.id).unwrap().children[0].id;
+        let inner = mgr.listing(second.scan_id, inner_id).unwrap();
+        assert!(inner.previous_total_bytes.is_some());
     }
 
     #[test]
     fn rejects_bad_roots_and_concurrent_scans() {
         let dir = fixture();
-        let mgr = ScanManager::default();
+        let mgr = ScanManager::new(Db::in_memory());
         let err = mgr
             .start("relative", ScanOptions::default(), recorder().0)
             .unwrap_err();
@@ -459,7 +557,6 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.kind, ErrorKind::InvalidInput);
 
-        // Hold the slot as if a scan were running.
         lock(&mgr.slot).running = Some(Running {
             id: 42,
             root: "X".into(),
@@ -478,8 +575,9 @@ mod tests {
     }
 
     #[test]
-    fn listing_without_a_scan_is_not_found() {
-        let mgr = ScanManager::default();
-        assert_eq!(mgr.listing(0).unwrap_err().kind, ErrorKind::NotFound);
+    fn empty_database_has_no_last_scan() {
+        let mgr = ScanManager::new(Db::in_memory());
+        assert!(mgr.status().unwrap().last.is_none());
+        assert_eq!(mgr.listing(1, 0).unwrap_err().kind, ErrorKind::NotFound);
     }
 }
