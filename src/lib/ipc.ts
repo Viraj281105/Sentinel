@@ -6,7 +6,9 @@ import type { DirListing } from "../bindings/DirListing";
 import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
 import type { LargeFileView } from "../bindings/LargeFileView";
+import type { Preview } from "../bindings/Preview";
 import type { ProtectedLocation } from "../bindings/ProtectedLocation";
+import type { ProviderInfo } from "../bindings/ProviderInfo";
 import type { ScanStatus } from "../bindings/ScanStatus";
 
 // Fallible commands reject with a `CommandError` ({ kind, message }).
@@ -20,6 +22,8 @@ export const ipc = {
   scanStatus: () => invoke<ScanStatus>("scan_status"),
   scanListing: (scanId: number, node: number) => invoke<DirListing>("scan_listing", { scanId, node }),
   scanLargestFiles: (scanId: number) => invoke<LargeFileView[]>("scan_largest_files", { scanId }),
+  cleanupProviders: () => invoke<ProviderInfo[]>("cleanup_providers"),
+  cleanupPreview: (provider: string) => invoke<Preview>("cleanup_preview", { provider }),
 };
 
 /** Turn whatever a rejected command produced into text a person can read. */

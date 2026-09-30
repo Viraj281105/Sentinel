@@ -5,6 +5,7 @@
 //! Commands are registered by full module path because `#[tauri::command]` generates
 //! companion items that re-exports do not carry.
 
+pub(crate) mod cleanup;
 pub(crate) mod error;
 pub(crate) mod safety;
 pub(crate) mod scan;

@@ -2765,6 +2765,7 @@ name = "sentinel-app"
 version = "0.1.0"
 dependencies = [
  "sentinel-classify",
+ "sentinel-cleanup",
  "sentinel-safety",
  "sentinel-scanner",
  "sentinel-store",
@@ -2797,6 +2798,7 @@ dependencies = [
  "sentinel-safety",
  "sentinel-scanner",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",

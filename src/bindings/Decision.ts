@@ -3,4 +3,4 @@
 /**
  * The verdict for one candidate.
  */
-export type Decision = { "state": "eligible" } | { "state": "tooRecent", newest_modified_ms: number, } | { "state": "protected", reason: string, } | { "state": "skipped", reason: string, };
+export type Decision = { "state": "eligible" } | { "state": "tooRecent", newestModifiedMs: number, } | { "state": "protected", reason: string, } | { "state": "skipped", reason: string, };

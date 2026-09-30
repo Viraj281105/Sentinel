@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NotImplemented } from "./components/NotImplemented";
 import { Sidebar } from "./components/Sidebar";
 import { PAGES, type PageId } from "./lib/nav";
+import { Cleanup } from "./pages/Cleanup";
 import { Overview } from "./pages/Overview";
 import { Settings } from "./pages/Settings";
 import { Storage } from "./pages/Storage";
@@ -12,6 +13,8 @@ function Page({ id }: { id: PageId }) {
       return <Overview />;
     case "storage":
       return <Storage />;
+    case "cleanup":
+      return <Cleanup />;
     case "settings":
       return <Settings />;
     default: {

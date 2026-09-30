@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDelta, percent } from "./format";
+import { formatAge, formatBytes, formatDelta, percent } from "./format";
+
+describe("formatAge", () => {
+  it("uses plain relative wording", () => {
+    const now = Date.UTC(2026, 8, 30);
+    const day = 86_400_000;
+    expect(formatAge(now - 1000, now)).toBe("today");
+    expect(formatAge(now - day, now)).toBe("yesterday");
+    expect(formatAge(now - 3 * day, now)).toBe("3 days ago");
+    expect(formatAge(now - 21 * day, now)).toBe("3 weeks ago");
+    expect(formatAge(now - 90 * day, now)).toBe("3 months ago");
+  });
+});
 
 describe("formatDelta", () => {
   it("signs changes and hides noise below 1 MB", () => {

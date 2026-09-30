@@ -36,6 +36,16 @@ export function formatDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
+/** "today", "yesterday", "3 days ago", "5 weeks ago". */
+export function formatAge(ms: number, now: number = Date.now()): string {
+  const days = Math.floor((now - ms) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 14) return `${days} days ago`;
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
+  return `${Math.floor(days / 30)} months ago`;
+}
+
 export function percent(part: number, whole: number): number {
   return whole > 0 ? (part / whole) * 100 : 0;
 }

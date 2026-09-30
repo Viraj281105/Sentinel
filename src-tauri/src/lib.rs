@@ -51,6 +51,8 @@ pub fn run() {
             commands::scan::scan_status,
             commands::scan::scan_listing,
             commands::scan::scan_largest_files,
+            commands::cleanup::cleanup_providers,
+            commands::cleanup::cleanup_preview,
         ])
         .run(tauri::generate_context!());
 

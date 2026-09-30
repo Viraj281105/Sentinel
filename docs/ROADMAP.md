@@ -29,7 +29,7 @@ Deferred from Phase 2 to Phase 7 (monitoring): incremental rescans and a scan sc
 Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, no permanent deletion in v1.
 
 1. ✅ `sentinel-cleanup`: provider contract, user-TEMP provider, dry-run preview (validation, protected descendants, age, links, limits)
-2. Cleanup page with dry-run preview (next)
+2. ✅ Cleanup page with dry-run preview: provider description, risk and minimum age; what would be removed vs kept, with the reason for each item
 3. Executor: quarantine move of revalidated targets, restore, expiry purge, locked-file handling
 4. Append-only, hash-chained audit log and Activity page
 5. More providers: crash dumps, Recycle Bin; Windows TEMP / Update cache after the elevation design
@@ -63,11 +63,11 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-`feat(cleanup): provider framework with dry-run only` – `sentinel-cleanup` crate with the
-`CleanupProvider` contract, a user-TEMP provider (discovery, age eligibility, risk,
-explanation) and a dry-run preview built entirely on `sentinel-safety` validation. No
-executor yet: execution, quarantine layout and elevation are security-sensitive design
-decisions that need maintainer sign-off first (see SAFETY_MODEL.md open decisions).
+`feat(cleanup): audit log` – append-only, hash-chained audit records in SQLite (operation
+id, provider, items, bytes, policy decision, approval, result, errors) with a verifier and
+the Activity page. Built before the executor so that every future removal is recorded
+from the first one. Then: the quarantine executor (move revalidated targets, restore,
+14-day expiry, locked-file handling), tested only on fixtures.
 
 ## Completed first milestone (historical)
 

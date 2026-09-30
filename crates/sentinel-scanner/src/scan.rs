@@ -61,7 +61,11 @@ pub enum NotScannedReason {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase", tag = "state")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "state"
+)]
 #[ts(export)]
 pub enum NodeStatus {
     Complete,

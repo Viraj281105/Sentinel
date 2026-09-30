@@ -26,7 +26,11 @@ pub enum ItemKind {
 
 /// The verdict for one candidate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase", tag = "state")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "state"
+)]
 #[ts(export)]
 pub enum Decision {
     /// Would be removed (moved to quarantine) by a real run.
@@ -60,7 +64,11 @@ pub struct PreviewItem {
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
-#[serde(rename_all = "camelCase", tag = "state")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "state"
+)]
 #[ts(export)]
 pub enum RootReport {
     Scanned {
@@ -332,5 +340,19 @@ pub fn preview(
         eligible_files,
         eligible_items,
         incomplete,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decisions_serialize_with_camel_case_fields() {
+        let json = serde_json::to_string(&Decision::TooRecent {
+            newest_modified_ms: 5,
+        })
+        .unwrap_or_default();
+        assert_eq!(json, r#"{"state":"tooRecent","newestModifiedMs":5}"#);
     }
 }

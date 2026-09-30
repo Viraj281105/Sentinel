@@ -119,7 +119,8 @@ Crates are created only when their first real feature lands (no empty scaffoldin
 
 - Thin shell: `AppState` holds the log directory and a `Policy` built once at startup.
 - Commands (`src-tauri/src/commands/`): `app_info`, `protected_locations`, `list_drives`,
-  `start_scan`, `cancel_scan`, `scan_status`, `scan_listing`, `scan_largest_files`. Each wraps a
+  `drive_trends`, `start_scan`, `cancel_scan`, `scan_status`, `scan_listing`,
+  `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only). Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to

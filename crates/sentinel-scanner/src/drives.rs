@@ -85,7 +85,11 @@ impl Space {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase", tag = "state")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "state"
+)]
 #[ts(export)]
 pub enum DriveStatus {
     Ready,
