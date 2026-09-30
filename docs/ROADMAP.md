@@ -30,7 +30,8 @@ Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, 
 
 1. ✅ `sentinel-cleanup`: provider contract, user-TEMP provider, dry-run preview (validation, protected descendants, age, links, limits)
 2. ✅ Cleanup page with dry-run preview: provider description, risk and minimum age; what would be removed vs kept, with the reason for each item
-3. Executor: quarantine move of revalidated targets, restore, expiry purge, locked-file handling
+3. ✅ Executor (`sentinel-quarantine`, fixture-tested, **not wired to the app**): audit-first, re-assessment before each move, rename by verified handle, manifest, restore without overwrite, 14-day purge without following links, in-use items skipped
+3b. Wire Clean up / Restore into the app (needs maintainer approval to act on the real TEMP folder)
 4. ✅ Append-only, hash-chained audit log (SQLite triggers + SHA-256 chain + verifier); previews recorded as dry runs; Activity page with integrity check
 5. More providers: crash dumps, Recycle Bin; Windows TEMP / Update cache after the elevation design
 
@@ -63,11 +64,10 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-`feat(cleanup): quarantine executor` – move revalidated targets into the per-volume
-`.sentinel-quarantine` folder with a manifest (original path, time, reason, operation id),
-restore with policy re-checks, 14-day expiry, locked files skipped; audit record written
-before any move, and no move if it cannot be written. Tested only on fixtures; the UI's
-"Clean up" button stays off until the executor has been reviewed.
+Awaiting maintainer decision: connect the executor to the app ("Clean up" on the Cleanup
+page with an explicit confirmation listing exactly what moves, a Quarantine view with
+Restore, and purge on app start). This would be the first time Sentinel changes files on
+the real machine.
 
 ## Completed first milestone (historical)
 

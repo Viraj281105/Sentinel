@@ -20,7 +20,9 @@ use sentinel_safety::RiskLevel;
 use serde::Serialize;
 use ts_rs::TS;
 
-pub use preview::{Decision, ItemKind, Preview, PreviewItem, PreviewLimits, RootReport, preview};
+pub use preview::{
+    Decision, ItemKind, Preview, PreviewItem, PreviewLimits, RootReport, assess, preview,
+};
 
 /// Risk shown to users; mirrors [`RiskLevel`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]

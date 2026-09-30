@@ -33,23 +33,40 @@ pub struct FileIdentity {
     file_index: u64,
 }
 
-fn identity_of(path: &Path) -> Result<FileIdentity, SafetyError> {
-    // Query-only access; open the object itself (not a link target).
-    let file = OpenOptions::new()
-        .access_mode(0)
+/// Open the object itself (never a link target) with the given access.
+fn open_object(path: &Path, access: u32) -> Result<std::fs::File, SafetyError> {
+    OpenOptions::new()
+        .access_mode(access)
         .share_mode(FILE_SHARE_ALL)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0 | FILE_FLAG_OPEN_REPARSE_POINT.0)
         .open(path)
-        .map_err(|e| SafetyError::io(path, e))?;
+        .map_err(|e| SafetyError::io(path, e))
+}
+
+/// Identity and whether the object is a reparse point, read from an open handle.
+fn handle_identity(file: &std::fs::File, path: &Path) -> Result<(FileIdentity, bool), SafetyError> {
     let mut info = BY_HANDLE_FILE_INFORMATION::default();
     // SAFETY: the handle is valid for the lifetime of `file`; `info` is a valid out-pointer.
     unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }
         .map_err(|e| SafetyError::io(path, e.into()))?;
-    Ok(FileIdentity {
-        volume_serial: info.dwVolumeSerialNumber,
-        file_index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
-    })
+    Ok((
+        FileIdentity {
+            volume_serial: info.dwVolumeSerialNumber,
+            file_index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+        },
+        info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0,
+    ))
 }
+
+fn identity_of(path: &Path) -> Result<FileIdentity, SafetyError> {
+    // Query-only access.
+    let file = open_object(path, 0)?;
+    Ok(handle_identity(&file, path)?.0)
+}
+
+const DELETE: u32 = 0x0001_0000;
+const FILE_READ_ATTRIBUTES: u32 = 0x0080;
+const SYNCHRONIZE: u32 = 0x0010_0000;
 
 /// A directory a cleanup provider is allowed to operate inside.
 ///
@@ -101,6 +118,23 @@ impl ValidatedTarget {
             ));
         }
         Ok(())
+    }
+
+    /// Revalidate, then open the object itself with rename/delete access and confirm on
+    /// the handle that it is still the validated object of the validated kind.
+    ///
+    /// Acting through the returned handle (rather than the path) means a path swapped
+    /// after this call cannot redirect the operation. Fails with a sharing error if
+    /// another process holds the object open without allowing deletion.
+    pub fn open_verified(&self, policy: &Policy) -> Result<std::fs::File, SafetyError> {
+        self.revalidate(policy)?;
+        let path = self.path.as_path();
+        let file = open_object(path, DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE)?;
+        let (identity, is_reparse) = handle_identity(&file, path)?;
+        if identity != self.identity || is_reparse != (self.kind == TargetKind::Link) {
+            return Err(SafetyError::IdentityChanged(path.to_path_buf()));
+        }
+        Ok(file)
     }
 }
 

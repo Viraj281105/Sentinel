@@ -216,6 +216,17 @@ Built-in provider: `UserTemp` (`%LOCALAPPDATA%\Temp` from the known-folder API, 
 `%TEMP%`; risk Safe; 7-day minimum age). The crate has no executor; see the
 maintainer decisions in SAFETY_MODEL.md for how execution will work.
 
+### Implemented: `sentinel-quarantine` (not wired to the app)
+
+The only crate that moves or deletes user files. `Quarantine::quarantine`, `restore` and
+`purge_expired` take a `Policy`, the provider, an audit sink (`FnMut(NewAuditRecord)`) and
+a context (operation id, user, time); see SAFETY_MODEL.md, "Quarantine executor", for the
+exact sequence. Moves are handle renames (`SetFileInformationByHandle(FileRenameInfo)`,
+never replacing). Each operation folder holds a versioned `manifest.json`. The
+`sentinel-cleanup` crate stays read-only; it gained `assess()` so the executor re-runs
+the exact preview checks per item, and `sentinel-safety` gained
+`ValidatedTarget::open_verified()`.
+
 ### Implemented: frontend (`src/`)
 
 React 19 + TypeScript (strict) + Vite + Tailwind 4, `lucide-react` icons. No component

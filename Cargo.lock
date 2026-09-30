@@ -2809,6 +2809,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-quarantine"
+version = "0.1.0"
+dependencies = [
+ "sentinel-cleanup",
+ "sentinel-safety",
+ "sentinel-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "ts-rs",
+ "windows",
+]
+
+[[package]]
 name = "sentinel-safety"
 version = "0.1.0"
 dependencies = [

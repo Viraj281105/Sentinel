@@ -18,6 +18,7 @@ const KIND: Record<AuditKind, string> = {
 };
 
 const OUTCOME: Record<Outcome, string> = {
+  started: "Started",
   noChanges: "Nothing changed",
   succeeded: "Succeeded",
   partiallySucceeded: "Partly succeeded",

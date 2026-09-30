@@ -4,16 +4,16 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sentinel_safety::{Policy, SafetyError, TargetKind};
+use sentinel_safety::{AllowedRoot, Policy, SafetyError, TargetKind, ValidatedTarget};
 use sentinel_scanner::dirent::{RawEntry, read_dir};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::{CleanupProvider, ProviderInfo};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum ItemKind {
@@ -193,11 +193,11 @@ impl Ctx<'_> {
 
     fn evaluate(
         &mut self,
-        root: &sentinel_safety::AllowedRoot,
+        root: &AllowedRoot,
         entry: &RawEntry,
         min_age_ms: i64,
         now_ms: i64,
-    ) -> PreviewItem {
+    ) -> (PreviewItem, Option<ValidatedTarget>) {
         let candidate = root.path().join(&entry.name);
         let mut item = PreviewItem {
             path: candidate.display().to_string(),
@@ -213,13 +213,13 @@ impl Ctx<'_> {
                 item.decision = Decision::Protected {
                     reason: err.to_string(),
                 };
-                return item;
+                return (item, None);
             }
             Err(err) => {
                 item.decision = Decision::Skipped {
                     reason: err.to_string(),
                 };
-                return item;
+                return (item, None);
             }
         };
         item.path = target.path().display().to_string();
@@ -240,11 +240,11 @@ impl Ctx<'_> {
                     None => {}
                     Some(Walk::Protected(reason)) => {
                         item.decision = Decision::Protected { reason };
-                        return item;
+                        return (item, None);
                     }
                     Some(Walk::Skipped(reason)) => {
                         item.decision = Decision::Skipped { reason };
-                        return item;
+                        return (item, None);
                     }
                 }
             }
@@ -257,7 +257,8 @@ impl Ctx<'_> {
                 newest_modified_ms: m.newest,
             };
         }
-        item
+        let eligible = item.decision == Decision::Eligible;
+        (item, eligible.then_some(target))
     }
 }
 
@@ -314,7 +315,7 @@ pub fn preview(
             if cancel.load(Ordering::Relaxed) || ctx.out_of_budget {
                 break;
             }
-            items.push(ctx.evaluate(&allowed, e, min_age_ms, now_ms));
+            items.push(ctx.evaluate(&allowed, e, min_age_ms, now_ms).0);
         }
     }
     items.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.path.cmp(&b.path)));
@@ -340,6 +341,47 @@ pub fn preview(
         eligible_files,
         eligible_items,
         incomplete,
+    }
+}
+
+/// Re-assess one candidate, `name`, directly inside `root`, exactly as a preview would.
+///
+/// Returns the assessment and, only when the item is still eligible, its validated
+/// target for the executor. Read-only. A name that no longer exists is `Skipped`.
+pub fn assess(
+    policy: &Policy,
+    root: &AllowedRoot,
+    name: &str,
+    min_age_days: u32,
+    now_ms: i64,
+    limits: PreviewLimits,
+) -> (PreviewItem, Option<ValidatedTarget>) {
+    let cancel = AtomicBool::new(false);
+    let mut ctx = Ctx {
+        policy,
+        limits,
+        cancel: &cancel,
+        entries: 0,
+        out_of_budget: false,
+    };
+    let entry = read_dir(root.path())
+        .ok()
+        .and_then(|es| es.into_iter().find(|e| e.name.eq_ignore_ascii_case(name)));
+    match entry {
+        Some(e) => ctx.evaluate(root, &e, i64::from(min_age_days) * DAY_MS, now_ms),
+        None => (
+            PreviewItem {
+                path: root.path().join(name).display().to_string(),
+                kind: ItemKind::File,
+                bytes: 0,
+                files: 0,
+                newest_modified_ms: None,
+                decision: Decision::Skipped {
+                    reason: "it no longer exists".into(),
+                },
+            },
+            None,
+        ),
     }
 }
 

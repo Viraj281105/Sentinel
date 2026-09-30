@@ -1,8 +1,9 @@
 # Sentinel Safety Model
 
-Status: path validation (`sentinel-safety`), dry-run previews (`sentinel-cleanup`) and
-the audit log (`sentinel-store`) are implemented. No code that deletes, moves or modifies
-user files exists yet; the executor and quarantine are designed below but not built.
+Status: path validation (`sentinel-safety`), dry-run previews (`sentinel-cleanup`), the
+audit log (`sentinel-store`) and the quarantine executor (`sentinel-quarantine`) are
+implemented. **The executor is not connected to the app**: it has only ever run against
+test fixtures, and no UI or command can invoke it until the maintainer approves that.
 
 **Audit rule for the executor:** the audit record for an operation is written before any
 file is touched, and if it cannot be written the operation does not run. A second record
@@ -19,6 +20,55 @@ preview is still shown.
    (Windows TEMP, Windows Update cache) wait for a separate minimal elevated helper or a
    per-operation UAC prompt, designed and reviewed separately.
 3. **No permanent deletion in v1:** every removal goes to quarantine.
+
+**Refinement of decision 1 (implementation, pending maintainer confirmation):** on the
+volume that holds the user profile, quarantine lives at
+`%LOCALAPPDATA%\Sentinel\.sentinel-quarantine`, not `C:\.sentinel-quarantine`. Reason: a
+folder created at a drive root inherits that root's ACL, and other local accounts can
+create folders there (so could pre-create it) and often read their contents. The profile
+location is private to the user by default ACL, is on the same volume as the user's TEMP
+folder (moves stay instant renames), and keeps the protected folder name. Quarantine on
+other volumes is not implemented; items there are refused until a location with an
+owner-only protected ACL and ownership verification is designed.
+
+## Quarantine executor (implemented, not wired to the app)
+
+For `quarantine(policy, provider, approved, …)`:
+
+1. Write a `Started` audit record. If it fails, return without creating anything.
+2. Ensure the quarantine folder exists, is a plain folder (not a link) and is in canonical
+   form; otherwise refuse the whole operation.
+3. Create `<quarantine>\<operation id>\` and write `manifest.json` listing every approved
+   item as `pending` (written again after every move; atomic replace).
+4. For each approved path, independently:
+   - it must be a direct child of one of the provider's roots, or it is skipped;
+   - `sentinel_cleanup::assess` re-runs the full preview check (validation, every
+     descendant against protected locations, minimum age); anything no longer eligible
+     is skipped with the reason;
+   - it must be on the quarantine folder's volume;
+   - `ValidatedTarget::open_verified` revalidates and opens the object itself with
+     rename access, checking volume serial, file index and link status on the handle;
+     a sharing or access error means "in use" and the item is skipped;
+   - the handle is renamed to `<operation id>\<n>` with `SetFileInformationByHandle`
+     (`ReplaceIfExists = false`). A rename cannot cross volumes, so a move is never a
+     copy-and-delete, and nothing is overwritten.
+5. Write an outcome audit record (`succeeded`, `partiallySucceeded`, `noChanges` or
+   `failed`, with every entry's status). If that write fails the moves stand (the
+   manifest and the `Started` record describe them) and the failure is logged.
+
+**Restore** refuses if anything exists at the original path, re-checks the destination
+with `allowed_root` and `check_protected`, writes a `Started` audit record first, and
+renames by handle without replacing.
+
+**Purge** removes operations whose 14-day retention has ended: `Started` record first,
+then each quarantined item is deleted without following links (`remove_dir_all` does not
+traverse junctions on Windows; a quarantined link is removed as a link), then the
+operation folder. Nothing outside the quarantine folder is ever deleted.
+
+**Known limit:** between the descendant check in step 4 and the rename, another process
+could add a file inside a folder item. That file would be quarantined with the folder
+(reversibly, and listed nowhere in the manifest). The window is milliseconds; closing it
+would need per-file moves.
 
 ## Principles
 

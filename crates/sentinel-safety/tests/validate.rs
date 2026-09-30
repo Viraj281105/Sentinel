@@ -331,3 +331,38 @@ fn system_policy_protects_real_user_and_system_locations() {
     );
     eprintln!("checked {checked} user folders");
 }
+
+#[test]
+fn open_verified_returns_a_handle_to_the_validated_object() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    let target = root.join("t.txt");
+    fs::write(&target, b"original").unwrap();
+    let validated = f.policy.validate(&f.root, &target).unwrap();
+    let handle = validated.open_verified(&f.policy).unwrap();
+    drop(handle);
+
+    // Replace the object: opening must now fail.
+    fs::rename(&target, root.join("moved.txt")).unwrap();
+    fs::write(&target, b"impostor").unwrap();
+    assert!(matches!(
+        validated.open_verified(&f.policy),
+        Err(SafetyError::IdentityChanged(_))
+    ));
+}
+
+#[test]
+fn open_verified_fails_while_another_process_blocks_deletion() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let f = fixture();
+    let target = f.root.path().join("busy.txt");
+    fs::write(&target, b"x").unwrap();
+    let validated = f.policy.validate(&f.root, &target).unwrap();
+    // Share read/write but not delete, like many programs holding a file open.
+    let _busy = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0x1 | 0x2)
+        .open(&target)
+        .unwrap();
+    assert!(validated.open_verified(&f.policy).is_err());
+}

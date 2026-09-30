@@ -50,6 +50,9 @@ pub enum Approval {
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub enum Outcome {
+    /// Recorded before an operation touches anything; its result follows in a later
+    /// record with the same operation id.
+    Started,
     NoChanges,
     Succeeded,
     PartiallySucceeded,
