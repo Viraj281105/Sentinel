@@ -35,8 +35,10 @@ Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, 
 4. ✅ Append-only, hash-chained audit log (SQLite triggers + SHA-256 chain + verifier); previews recorded as dry runs; Activity page with integrity check
 5. More providers: crash dumps, Recycle Bin; Windows TEMP / Update cache after the elevation design
 
-## Phase 4 – Dev ecosystem ⬜
-Project detection; npm/pnpm/yarn/pip/pytest caches; Maven/Gradle analysis (read-only first).
+## Phase 4 – Dev ecosystem 🚧
+1. ✅ `sentinel-devenv`: read-only project detection (Node, Python, Rust, Java/Maven/Gradle, .NET, Go, Ruby, Docker), package managers from lockfiles, runtime requirements, Git, last activity, rebuildable artifacts with sizes (real run: 19 projects under D:\Projects in under a second)
+2. Projects page: choose folders to search, saved results, inactive projects and their artifact sizes (next)
+3. Package caches (npm, pnpm, Yarn, pip) as analysis-only providers; Maven/Gradle cache analysis
 
 ## Phase 5 – Inventory & graph ⬜
 Software inventory (registry, winget, Store), runtime inventory, dependency graph.

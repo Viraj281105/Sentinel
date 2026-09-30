@@ -216,6 +216,25 @@ Built-in provider: `UserTemp` (`%LOCALAPPDATA%\Temp` from the known-folder API, 
 `%TEMP%`; risk Safe; 7-day minimum age). The crate has no executor; see the
 maintainer decisions in SAFETY_MODEL.md for how execution will work.
 
+### Implemented: `sentinel-devenv`
+
+`detect(root, options, cancel)` walks a folder (read-only, depth 10, 300 k folders,
+never following links, skipping `node_modules`, `.git`, `.venv`, `AppData`, caches and
+system folders at a drive root) and recognizes a project wherever marker files appear.
+Nested projects (monorepo packages, workspace members) are separate projects. For each:
+
+- ecosystems and package managers from marker and lock files;
+- name and runtime requirements parsed from `package.json` (`engines.node`),
+  `pyproject.toml` (`requires-python`), `Cargo.toml` (`rust-version`),
+  `rust-toolchain(.toml)`, `go.mod`, `.nvmrc`, `.node-version`, `.python-version`;
+- artifacts only where the project type makes the folder unambiguous: `node_modules`,
+  `.next`, any folder containing `pyvenv.cfg`, Python tool caches, Cargo `target`,
+  Gradle `build`/`.gradle`, .NET `bin`/`obj`;
+- last activity: newest change among top-level entries (artifacts excluded) and
+  `.git/HEAD`, `index`, `FETCH_HEAD`, `ORIG_HEAD`;
+- sizes from one scanner pass over the project folder (a parent project's total includes
+  nested projects).
+
 ### Implemented: `sentinel-quarantine` (not wired to the app)
 
 The only crate that moves or deletes user files. `Quarantine::quarantine`, `restore` and
