@@ -2826,6 +2826,7 @@ name = "sentinel-cleanup"
 version = "0.1.0"
 dependencies = [
  "sentinel-classify",
+ "sentinel-devenv",
  "sentinel-safety",
  "sentinel-scanner",
  "serde",

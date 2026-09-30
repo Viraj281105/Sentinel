@@ -13,7 +13,7 @@
 mod preview;
 pub mod providers;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sentinel_classify::Category;
 use sentinel_safety::RiskLevel;
@@ -82,9 +82,24 @@ pub trait CleanupProvider: Send + Sync {
     /// not treated as errors.
     fn roots(&self) -> Vec<PathBuf>;
 
-    /// Whether a direct child of a root, by name, belongs to this provider. Entries it
-    /// rejects are neither listed nor ever touched.
-    fn is_candidate(&self, _name: &str) -> bool {
+    /// Whether the direct child `name` of `root` (canonical) belongs to this provider.
+    /// Entries it rejects are neither listed nor ever touched.
+    fn is_candidate(&self, _root: &Path, _name: &str) -> bool {
         true
     }
+
+    /// Things the provider deliberately left out, with the reason, so previews can
+    /// explain them instead of silently omitting them.
+    fn exclusions(&self) -> Vec<Exclusion> {
+        Vec::new()
+    }
+}
+
+/// Something a provider refused to offer, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Exclusion {
+    pub path: String,
+    pub reason: String,
+    /// Shown as protected (e.g. tracked by Git) rather than merely skipped.
+    pub protected: bool,
 }

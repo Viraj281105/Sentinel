@@ -371,9 +371,17 @@ impl Quarantine {
         let volume = drive_of(&root);
 
         for (i, path) in approved.iter().enumerate() {
-            let known = path
-                .file_name()
-                .is_some_and(|n| provider.is_candidate(&n.to_string_lossy()));
+            let root = path.parent().and_then(|parent| {
+                provider_roots
+                    .iter()
+                    .find(|r| is_within(parent, r) && is_within(r, parent))
+            });
+            let known = match (root, path.file_name()) {
+                (Some(r), Some(n)) => provider.is_candidate(r, &n.to_string_lossy()),
+                // Not inside a provider root: move_one reports that precisely.
+                (None, Some(_)) => true,
+                _ => false,
+            };
             let status = if known {
                 self.move_one(
                     policy,

@@ -577,3 +577,163 @@ mod caches {
         assert!(!f.q.root().exists());
     }
 }
+
+mod projects {
+    use super::*;
+    use sentinel_cleanup::providers::ProjectArtifacts;
+    use sentinel_cleanup::{Decision, PreviewLimits, preview};
+    use std::sync::atomic::AtomicBool;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let out = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    }
+
+    /// Age every file and folder under `dir` (bottom-up), including `.git`.
+    fn age_tree(dir: &Path, days: u32) {
+        for e in fs::read_dir(dir).unwrap() {
+            let p = e.unwrap().path();
+            if fs::symlink_metadata(&p).unwrap().is_dir() {
+                age_tree(&p, days);
+            }
+            age(&p, days);
+        }
+        age(dir, days);
+    }
+
+    /// A Git repository `name` under `base` with a committed package.json and src,
+    /// untracked node_modules, and (for `gradle`) committed build output.
+    fn project(base: &Path, name: &str, gradle: bool) -> PathBuf {
+        let p = base.join(name);
+        put(&p.join("package.json"), br#"{"name":"x"}"#, 0);
+        put(&p.join("src").join("index.js"), b"code", 0);
+        put(
+            &p.join("node_modules").join("react").join("index.js"),
+            &[b'x'; 5000],
+            0,
+        );
+        git(&p, &["init", "-q"]);
+        let mut add = vec!["add", "package.json", "src"];
+        if gradle {
+            put(&p.join("build.gradle"), b"", 0);
+            put(&p.join("build").join("libs").join("app.jar"), b"jar", 0);
+            add.extend(["build.gradle", "build"]);
+        }
+        git(&p, &add);
+        git(&p, &["commit", "-q", "-m", "init"]);
+        p
+    }
+
+    #[test]
+    fn moves_untracked_artifacts_of_inactive_projects_only() {
+        let f = fx();
+        let base = f.temp.parent().unwrap().join("code");
+        let old = project(&base, "old", true);
+        let active = project(&base, "active", false);
+        age_tree(&old, 120);
+        age_tree(&active, 120);
+        put(&active.join("src").join("new.js"), b"today", 0);
+
+        let provider = ProjectArtifacts::for_projects(&[old.clone(), active.clone()], now_ms());
+        let pv = preview(
+            &provider,
+            &f.policy,
+            now_ms(),
+            PreviewLimits::default(),
+            &AtomicBool::new(false),
+        );
+        let find = |suffix: &str| {
+            pv.items
+                .iter()
+                .find(|i| i.path.ends_with(suffix))
+                .unwrap_or_else(|| panic!("{suffix} missing: {:#?}", pv.items))
+        };
+        assert_eq!(find(r"old\node_modules").decision, Decision::Eligible);
+        assert!(
+            matches!(&find(r"old\build").decision, Decision::Protected { reason } if reason.contains("Git"))
+        );
+        assert!(
+            matches!(&find("active").decision, Decision::Skipped { reason } if reason.contains("changed 0 days ago"))
+        );
+        assert_eq!(pv.eligible_items, 1);
+
+        // Approve everything, including things that must not move.
+        let approved = [
+            old.join("node_modules"),
+            old.join("build"),
+            old.join("src"),
+            active.join("node_modules"),
+        ];
+        let mut log = Log::new();
+        let m =
+            f.q.quarantine(
+                &f.policy,
+                &provider,
+                &approved,
+                &ctx("op-1", now_ms()),
+                &mut sink(&mut log),
+            )
+            .unwrap();
+        assert_eq!(status(&m, 0), &EntryStatus::Quarantined);
+        for i in 1..4 {
+            assert!(
+                matches!(status(&m, i), EntryStatus::Skipped { .. }),
+                "{i}: {:?}",
+                status(&m, i)
+            );
+        }
+        assert!(!old.join("node_modules").exists());
+        assert!(
+            old.join("build").join("libs").join("app.jar").exists(),
+            "tracked output kept"
+        );
+        assert!(
+            old.join("src").join("index.js").exists(),
+            "source never touched"
+        );
+        assert!(
+            active.join("node_modules").exists(),
+            "active project untouched"
+        );
+
+        // And it comes back.
+        f.q.restore(
+            &f.policy,
+            "op-1",
+            0,
+            &ctx("op-2", now_ms()),
+            &mut sink(&mut log),
+        )
+        .unwrap();
+        assert!(
+            old.join("node_modules")
+                .join("react")
+                .join("index.js")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn a_project_that_disappeared_or_changed_is_explained() {
+        let f = fx();
+        let gone = f.temp.parent().unwrap().join("gone");
+        let provider = ProjectArtifacts::for_projects(&[gone], now_ms());
+        let pv = preview(
+            &provider,
+            &f.policy,
+            now_ms(),
+            PreviewLimits::default(),
+            &AtomicBool::new(false),
+        );
+        assert_eq!(pv.items.len(), 1);
+        assert!(
+            matches!(&pv.items[0].decision, Decision::Skipped { reason } if reason.contains("no longer exists"))
+        );
+        assert_eq!(pv.eligible_items, 0);
+    }
+}

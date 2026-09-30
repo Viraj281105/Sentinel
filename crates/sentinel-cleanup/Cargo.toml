@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 sentinel-classify = { path = "../sentinel-classify" }
+sentinel-devenv = { path = "../sentinel-devenv" }
 sentinel-safety = { path = "../sentinel-safety" }
 sentinel-scanner = { path = "../sentinel-scanner" }
 serde = { version = "1", features = ["derive"] }

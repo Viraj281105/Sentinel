@@ -311,3 +311,55 @@ fn virtual_environments_are_found_by_pyvenv_cfg_whatever_their_name() {
     assert_eq!(venvs.len(), 1);
     assert!(venvs[0].ends_with(r"app\app"));
 }
+
+#[test]
+fn last_activity_sees_changes_deep_inside_the_project() {
+    use std::fs::OpenOptions;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::time::{Duration, SystemTime};
+    let age = |p: &Path, days: u64| {
+        OpenOptions::new()
+            .access_mode(0x0100)
+            .custom_flags(0x0200_0000)
+            .open(p)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(days * 86_400))
+            .unwrap();
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("app");
+    put(&p.join("package.json"), "{}");
+    put(&p.join("src").join("ui").join("old.js"), "x");
+    put(
+        &p.join("node_modules").join("x").join("new.js"),
+        "dependency written today",
+    );
+    for f in [
+        p.join("package.json"),
+        p.join("src").join("ui").join("old.js"),
+        p.join("src").join("ui"),
+        p.join("src"),
+        p.clone(),
+    ] {
+        age(&f, 200);
+    }
+    let when = |d: &Detection| project(d, "app").last_activity_ms.unwrap();
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let before = run(dir.path());
+    assert!(
+        now - when(&before) > 150 * 86_400_000,
+        "node_modules does not count"
+    );
+
+    // Edit a file two levels down; the top-level folders' dates do not change.
+    put(&p.join("src").join("ui").join("edited.js"), "today");
+    age(&p.join("src"), 200);
+    let after = run(dir.path());
+    assert!(
+        now - when(&after) < 86_400_000,
+        "a deep edit makes the project active"
+    );
+}

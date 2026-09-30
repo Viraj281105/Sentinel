@@ -311,7 +311,10 @@ pub fn preview(
         roots.push(RootReport::Scanned {
             path: allowed.path().display().to_string(),
         });
-        for e in entries.iter().filter(|e| provider.is_candidate(&e.name)) {
+        for e in entries
+            .iter()
+            .filter(|e| provider.is_candidate(allowed.path(), &e.name))
+        {
             if cancel.load(Ordering::Relaxed) || ctx.out_of_budget {
                 break;
             }
@@ -326,6 +329,20 @@ pub fn preview(
             }
             items.push(item);
         }
+    }
+    for x in provider.exclusions() {
+        items.push(PreviewItem {
+            path: x.path,
+            kind: ItemKind::Folder,
+            bytes: 0,
+            files: 0,
+            newest_modified_ms: None,
+            decision: if x.protected {
+                Decision::Protected { reason: x.reason }
+            } else {
+                Decision::Skipped { reason: x.reason }
+            },
+        });
     }
     items.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.path.cmp(&b.path)));
     let eligible = items.iter().filter(|i| i.decision == Decision::Eligible);

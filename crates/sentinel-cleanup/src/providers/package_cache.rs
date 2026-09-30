@@ -5,7 +5,7 @@
 //! and an override could point a cache provider at an unrelated folder. As a second
 //! line of defense, each cache only accepts the child folders it knows by name.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sentinel_classify::Category;
 use sentinel_safety::{Known, RiskLevel, known_folder};
@@ -113,7 +113,7 @@ impl CleanupProvider for PackageCache {
         self.root.iter().cloned().collect()
     }
 
-    fn is_candidate(&self, name: &str) -> bool {
+    fn is_candidate(&self, _root: &Path, name: &str) -> bool {
         let n = name.to_ascii_lowercase();
         match self.kind {
             CacheKind::Npm => matches!(n.as_str(), "_cacache" | "_npx" | "_logs" | "_prebuilds"),
@@ -130,13 +130,22 @@ mod tests {
     #[test]
     fn only_known_children_are_candidates() {
         let npm = PackageCache::with_root(CacheKind::Npm, PathBuf::new());
-        assert!(npm.is_candidate("_cacache") && npm.is_candidate("_NPX"));
-        assert!(!npm.is_candidate("_update-notifier-last-checked"));
-        assert!(!npm.is_candidate("my-project"));
+        assert!(
+            npm.is_candidate(Path::new(""), "_cacache") && npm.is_candidate(Path::new(""), "_NPX")
+        );
+        assert!(!npm.is_candidate(Path::new(""), "_update-notifier-last-checked"));
+        assert!(!npm.is_candidate(Path::new(""), "my-project"));
         let pip = PackageCache::with_root(CacheKind::Pip, PathBuf::new());
-        assert!(pip.is_candidate("http-v2") && !pip.is_candidate("selfcheck"));
+        assert!(
+            pip.is_candidate(Path::new(""), "http-v2")
+                && !pip.is_candidate(Path::new(""), "selfcheck")
+        );
         let yarn = PackageCache::with_root(CacheKind::Yarn, PathBuf::new());
-        assert!(yarn.is_candidate("v6") && !yarn.is_candidate("v") && !yarn.is_candidate("vendor"));
+        assert!(
+            yarn.is_candidate(Path::new(""), "v6")
+                && !yarn.is_candidate(Path::new(""), "v")
+                && !yarn.is_candidate(Path::new(""), "vendor")
+        );
     }
 
     #[test]

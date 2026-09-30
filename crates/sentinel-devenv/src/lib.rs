@@ -9,6 +9,7 @@
 //! Project files are parsed with size limits and never executed: no package manager,
 //! build tool, script or Git hook is run.
 
+mod git;
 mod model;
 mod parse;
 
@@ -20,6 +21,7 @@ use std::time::Instant;
 use sentinel_scanner::dirent::{RawEntry, read_dir};
 use sentinel_scanner::scan::{ScanControl, ScanOptions, ScanTree, scan};
 
+pub use git::tracks_anything_under;
 pub use model::{
     Artifact, ArtifactKind, Detection, Ecosystem, PackageManager, Project, Runtime,
     RuntimeRequirement,
@@ -261,20 +263,19 @@ fn recognize(dir: &Path, entries: &[RawEntry]) -> Option<Project> {
         add("obj", ArtifactKind::DotNetBuild);
     }
 
-    // Last activity: top-level entries other than artifact folders, plus Git metadata.
+    // Last activity: the newest change anywhere in the project's own files. A folder's
+    // timestamp does not change when a file deep inside it is edited, so the top level
+    // alone would make an actively edited project look idle.
     let artifact_names: BTreeSet<String> = artifacts
         .iter()
         .filter_map(|a| Path::new(&a.path).file_name())
         .map(|n| n.to_string_lossy().to_lowercase())
         .collect();
-    let mut last = entries
-        .iter()
-        .filter(|e| !artifact_names.contains(&e.name.to_lowercase()) && e.name != ".git")
-        .map(|e| e.modified_ms)
-        .max();
+    let mut last = newest_change(dir, &artifact_names);
     let git_dir = dir.join(".git");
     let git = dirs.contains(".git") || files.contains(".git");
-    if git_dir.is_dir()
+    if last.is_some()
+        && git_dir.is_dir()
         && let Ok(git_entries) = read_dir(&git_dir)
     {
         for e in git_entries {
@@ -472,4 +473,47 @@ pub fn detect(
         "project detection finished"
     );
     Ok(d)
+}
+
+/// Recognize the project in `dir` from its current contents, without searching below
+/// it and without measuring sizes. `None` if `dir` is not (or no longer) a project.
+/// Read-only.
+pub fn inspect(dir: &Path) -> Option<Project> {
+    let entries = read_dir(dir).ok()?;
+    recognize(dir, &entries)
+}
+
+/// Entries examined when working out a project's last activity. Beyond this the answer
+/// is unknown (`None`), which callers treat as "possibly active".
+const ACTIVITY_ENTRY_BUDGET: u64 = 300_000;
+
+/// Newest modification time of any file or folder in the project, skipping its artifact
+/// folders (top level only), dependency and VCS folders, and links. `None` if the budget
+/// runs out or the top level cannot be read.
+fn newest_change(dir: &Path, artifact_names: &BTreeSet<String>) -> Option<i64> {
+    let mut newest = i64::MIN;
+    let mut seen = 0u64;
+    let mut stack = vec![(dir.to_path_buf(), true)];
+    while let Some((d, top)) = stack.pop() {
+        let entries = match read_dir(&d) {
+            Ok(e) => e,
+            Err(_) if !top => continue,
+            Err(_) => return None,
+        };
+        seen += entries.len() as u64;
+        if seen > ACTIVITY_ENTRY_BUDGET {
+            return None;
+        }
+        for e in entries {
+            let lower = e.name.to_lowercase();
+            if (top && artifact_names.contains(&lower)) || SKIP_ANYWHERE.contains(&lower.as_str()) {
+                continue;
+            }
+            newest = newest.max(e.modified_ms);
+            if e.is_dir() && !e.is_reparse_point() {
+                stack.push((d.join(&e.name), false));
+            }
+        }
+    }
+    (newest != i64::MIN).then_some(newest)
 }
