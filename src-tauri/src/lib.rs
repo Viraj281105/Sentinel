@@ -76,6 +76,8 @@ pub fn run() {
             commands::projects::find_projects,
             commands::projects::remove_project_search,
             commands::quarantine::cleanup_run,
+            commands::quarantine::project_cleanup_run,
+            commands::cleanup::project_cleanup_preview,
             commands::quarantine::quarantine_contents,
             commands::quarantine::quarantine_restore,
         ])

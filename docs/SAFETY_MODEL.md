@@ -172,12 +172,33 @@ always goes through the shared executor. Providers cannot touch paths outside th
 declared roots.
 
 Implemented contract (`CleanupProvider`): `info()` (including `min_age_days`,
-`can_clean`, `note`), `roots()`, and `is_candidate(name)`. A provider that names its
-candidates (all package caches do) can never have any other child of its root listed or
-moved: preview filters on it and the executor re-checks it for every approved path. An
-analysis-only provider (`can_clean = false`, e.g. the pnpm store, whose files are
-hard-linked into projects) is previewed for size but nothing is eligible, and the executor
-refuses it before writing anything.
+`can_clean`, `note`), `roots()`, `is_candidate(root, name)` and `exclusions()`. A provider
+that names its candidates (package caches, project artifacts) can never have any other
+child of its root listed or moved: preview filters on it and the executor re-checks it
+for every approved path. Exclusions are shown in previews as protected or skipped items
+with the reason. An analysis-only provider (`can_clean = false`, e.g. the pnpm store,
+whose files are hard-linked into projects) is previewed for size but nothing is eligible,
+and the executor refuses it before writing anything.
+
+### Inactive project artifacts (`project-artifacts`, medium risk)
+
+Built for an explicit list of project folders at preview time and again at run time; saved
+search results are never trusted. Per project:
+
+1. The folder must still exist and still be a project (`sentinel_devenv::inspect`).
+2. It must be inactive: its newest change anywhere in its own files (dependency, VCS and
+   artifact folders excluded; bounded walk, unknown if the bound is hit) must be at least
+   90 days old. Folder timestamps alone are not enough on Windows: they do not change when
+   a file deep inside is edited.
+3. Only the artifact folders the detector identified for that project type are candidates
+   (`node_modules`, `.next`, folders with `pyvenv.cfg`, Python tool caches, Cargo `target`,
+   Gradle `build`/`.gradle`, .NET `bin`/`obj`).
+4. Git must track nothing under the folder, determined by parsing the repository's index
+   (v2-v4, worktrees). If the index cannot be read reliably (e.g. split index), the folder
+   is excluded. On the maintainer's machine this protected a committed virtual
+   environment.
+5. The usual preview and executor checks then apply (90-day age of the folder's own
+   contents, protected descendants, in-use skip, confirmation, quarantine, audit).
 
 ## Operation lifecycle
 

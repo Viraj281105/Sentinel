@@ -35,6 +35,9 @@ export const ipc = {
   projectSearches: () => invoke<ProjectSearch[]>("project_searches"),
   findProjects: (root: string) => invoke<ProjectSearch>("find_projects", { root }),
   removeProjectSearch: (root: string) => invoke<boolean>("remove_project_search", { root }),
+  projectCleanupPreview: (projects: string[]) => invoke<PreviewResponse>("project_cleanup_preview", { projects }),
+  projectCleanupRun: (projects: string[], approved: string[]) =>
+    invoke<CleanupRunResponse>("project_cleanup_run", { projects, approved }),
   cleanupRun: (provider: string, approved: string[]) =>
     invoke<CleanupRunResponse>("cleanup_run", { provider, approved }),
   quarantineContents: () => invoke<QuarantineContents>("quarantine_contents"),

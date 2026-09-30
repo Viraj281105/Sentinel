@@ -122,7 +122,8 @@ Crates are created only when their first real feature lands (no empty scaffoldin
   `drive_trends`, `start_scan`, `cancel_scan`, `scan_status`, `scan_listing`,
   `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only), `project_searches`,
   `find_projects`, `remove_project_search`, `audit_log`, `audit_verify`, `cleanup_run`,
-  `quarantine_contents`, `quarantine_restore`. Each wraps a
+  `quarantine_contents`, `quarantine_restore`, `project_cleanup_preview`,
+  `project_cleanup_run`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -223,6 +224,7 @@ Built-in providers (the crate itself has no executor; `sentinel-quarantine` exec
 | `yarn-cache` | `%LOCALAPPDATA%\Yarn\Cache` | `v<digits>` | 1 day | yes |
 | `pip-cache` | `%LOCALAPPDATA%\pip\cache` | `http`, `http-v2`, `wheels` | 1 day | yes |
 | `pnpm-store` | `%LOCALAPPDATA%\pnpm\store` | `v<digits>` | 1 day | no (analysis only) |
+| `project-artifacts` | each requested project folder (re-inspected) | that project's untracked artifact folders | 90 days | yes, medium risk |
 
 Cache overrides (`.npmrc`, `npm_config_cache`, `PIP_CACHE_DIR`, `YARN_CACHE_FOLDER`) are
 not honored: `.npmrc` may hold credentials and is never read, and an override could aim a

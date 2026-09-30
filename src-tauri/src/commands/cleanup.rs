@@ -2,6 +2,7 @@
 
 use std::sync::atomic::AtomicBool;
 
+use sentinel_cleanup::providers::ProjectArtifacts;
 use sentinel_cleanup::{CleanupProvider, Preview, PreviewLimits, ProviderInfo, preview, providers};
 use sentinel_safety::Policy;
 use serde::Serialize;
@@ -9,7 +10,7 @@ use tauri::State;
 use ts_rs::TS;
 
 use super::error::{CommandError, ErrorKind};
-use crate::db::now_ms;
+use crate::db::{Db, now_ms};
 use crate::{AppState, audit};
 
 #[tauri::command]
@@ -41,24 +42,54 @@ pub(crate) async fn cleanup_preview(
     let user = state.user.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let preview = run_preview(&providers::builtin(), &policy, &provider)?;
-        let operation_id = audit::new_operation_id();
-        let rec = audit::preview_record(&preview, &operation_id, &user, now_ms());
-        // A preview changes nothing, so a failed audit write does not hide it.
-        let audit_seq = match audit::record(&db, &rec) {
-            Ok(seq) => Some(seq),
-            Err(err) => {
-                tracing::error!(error = %err, operation = %operation_id, "could not record preview");
-                None
-            }
-        };
-        Ok(PreviewResponse {
-            preview,
-            operation_id,
-            audit_seq,
-        })
+        Ok(recorded(preview, &db, &user))
     })
     .await
     .map_err(|e| CommandError::internal("previewing cleanup", e))?
+}
+
+/// Record a preview in the audit log and wrap it for the frontend.
+fn recorded(preview: Preview, db: &Db, user: &str) -> PreviewResponse {
+    let operation_id = audit::new_operation_id();
+    let rec = audit::preview_record(&preview, &operation_id, user, now_ms());
+    // A preview changes nothing, so a failed audit write does not hide it.
+    let audit_seq = match audit::record(db, &rec) {
+        Ok(seq) => Some(seq),
+        Err(err) => {
+            tracing::error!(error = %err, operation = %operation_id, "could not record preview");
+            None
+        }
+    };
+    PreviewResponse {
+        preview,
+        operation_id,
+        audit_seq,
+    }
+}
+
+/// Preview removing the rebuildable folders of the given projects. Each project is
+/// re-inspected from disk; active ones, Git-tracked folders and anything uncertain are
+/// shown as excluded with the reason.
+#[tauri::command]
+pub(crate) async fn project_cleanup_preview(
+    state: State<'_, AppState>,
+    projects: Vec<String>,
+) -> Result<PreviewResponse, CommandError> {
+    let paths = super::quarantine::project_paths(&projects)?;
+    let (policy, db, user) = (state.policy.clone(), state.db.clone(), state.user.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let provider = ProjectArtifacts::for_projects(&paths, now_ms());
+        let preview = preview(
+            &provider,
+            &policy,
+            now_ms(),
+            PreviewLimits::default(),
+            &AtomicBool::new(false),
+        );
+        Ok(recorded(preview, &db, &user))
+    })
+    .await
+    .map_err(|e| CommandError::internal("previewing project cleanup", e))?
 }
 
 fn run_preview(

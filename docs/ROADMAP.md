@@ -39,7 +39,8 @@ Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, 
 1. ✅ `sentinel-devenv`: read-only project detection (Node, Python, Rust, Java/Maven/Gradle, .NET, Go, Ruby, Docker), package managers from lockfiles, runtime requirements, Git, last activity, rebuildable artifacts with sizes (real run: 19 projects under D:\Projects in under a second)
 2. ✅ Projects page: folders chosen with the system folder picker, saved searches (store v4), rebuildable space, projects inactive for 90+ days, per-project runtimes and artifacts
 3. ✅ Package caches: npm, Yarn and pip cleanable (default locations only, named cache folders only, 1-day minimum age); pnpm store analysis-only. Real machine: Yarn 592 MB and pip 438 MB eligible
-4. Maven/Gradle cache analysis
+4. ✅ Inactive project cleanup from the Projects page: re-inspected at preview and run time, 90-day inactivity over the whole project tree, artifact folders only, never anything Git tracks (own index parser). Real machine: 1.15 GB eligible in 3 projects; a committed venv correctly protected
+5. Maven/Gradle cache analysis
 
 ## Phase 5 – Inventory & graph ⬜
 Software inventory (registry, winget, Store), runtime inventory, dependency graph.
@@ -67,10 +68,8 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-The first real cleanup and restore were run by the maintainer on 2026-09-30 and worked.
-Next: link inactive projects' rebuildable folders (node_modules, virtual environments,
-build output) to a cleanup provider with project-aware safety (never an active project,
-never inside a Git working tree's tracked content), and Maven/Gradle cache analysis.
+Maven/Gradle cache analysis (read-only first: which artifacts and versions are held, and
+which projects still reference them), then Phase 5: software and runtime inventory.
 
 ## Completed first milestone (historical)
 

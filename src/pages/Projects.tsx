@@ -6,6 +6,7 @@ import type { Ecosystem } from "../bindings/Ecosystem";
 import type { PackageManager } from "../bindings/PackageManager";
 import type { Project } from "../bindings/Project";
 import type { ProjectSearch } from "../bindings/ProjectSearch";
+import { ProjectCleanup } from "../components/ProjectCleanup";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
 import { formatAge, formatBytes, formatDateTime } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
@@ -284,6 +285,13 @@ export function Projects() {
             </div>
           )}
         </Panel>
+
+        {inactiveRebuildable > 0 && (
+          <ProjectCleanup
+            projects={inactive.filter((p) => rebuildable(p) > 0).map((p) => p.path)}
+            bytes={inactiveRebuildable}
+          />
+        )}
 
         {projects.length > 0 && (
           <Panel title={`${projects.length} projects`}>

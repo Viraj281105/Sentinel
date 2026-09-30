@@ -3,7 +3,8 @@
 //! `cleanup_run` moves items the user approved from a preview into quarantine; the
 //! executor re-checks every item before moving it and writes audit records first.
 
-use sentinel_cleanup::providers;
+use sentinel_cleanup::CleanupProvider;
+use sentinel_cleanup::providers::{self, ProjectArtifacts};
 use sentinel_quarantine::{Context, Manifest, ManifestEntry, Quarantine, QuarantineError};
 use sentinel_safety::Policy;
 use serde::Serialize;
@@ -73,6 +74,17 @@ fn run(
                 format!("There is no cleanup type called {provider_id}."),
             )
         })?;
+    run_with(q, policy, db, user, provider.as_ref(), approved)
+}
+
+fn run_with(
+    q: &Quarantine,
+    policy: &Policy,
+    db: &Db,
+    user: &str,
+    provider: &dyn CleanupProvider,
+    approved: &[String],
+) -> Result<CleanupRunResponse, CommandError> {
     let paths: Vec<std::path::PathBuf> = approved.iter().map(std::path::PathBuf::from).collect();
     let operation_id = audit::new_operation_id();
     let ctx = Context {
@@ -80,7 +92,7 @@ fn run(
         user,
         now_ms: now_ms(),
     };
-    let manifest = q.quarantine(policy, provider.as_ref(), &paths, &ctx, &mut db_sink(db))?;
+    let manifest = q.quarantine(policy, provider, &paths, &ctx, &mut db_sink(db))?;
     Ok(CleanupRunResponse {
         operation_id,
         manifest,
@@ -99,6 +111,44 @@ pub(crate) async fn cleanup_run(
     tauri::async_runtime::spawn_blocking(move || run(&q, &policy, &db, &user, &provider, &approved))
         .await
         .map_err(|e| CommandError::internal("moving items to quarantine", e))?
+}
+
+/// Most projects one request may name.
+pub(crate) const MAX_PROJECTS: usize = 1_000;
+
+pub(crate) fn project_paths(projects: &[String]) -> Result<Vec<std::path::PathBuf>, CommandError> {
+    if projects.is_empty() || projects.len() > MAX_PROJECTS {
+        return Err(CommandError::new(
+            ErrorKind::InvalidInput,
+            "Choose between 1 and 1,000 projects.",
+        ));
+    }
+    Ok(projects.iter().map(std::path::PathBuf::from).collect())
+}
+
+/// Move approved rebuildable folders of inactive projects into quarantine. The project
+/// list is re-inspected from disk now; the executor re-checks every folder.
+#[tauri::command]
+pub(crate) async fn project_cleanup_run(
+    state: State<'_, AppState>,
+    projects: Vec<String>,
+    approved: Vec<String>,
+) -> Result<CleanupRunResponse, CommandError> {
+    let q = quarantine(&state)?;
+    let paths = project_paths(&projects)?;
+    if approved.is_empty() || approved.len() > MAX_ITEMS {
+        return Err(CommandError::new(
+            ErrorKind::InvalidInput,
+            "Choose between 1 and 10,000 items to move.",
+        ));
+    }
+    let (policy, db, user) = (state.policy.clone(), state.db.clone(), state.user.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let provider = ProjectArtifacts::for_projects(&paths, now_ms());
+        run_with(&q, &policy, &db, &user, &provider, &approved)
+    })
+    .await
+    .map_err(|e| CommandError::internal("moving project folders to quarantine", e))?
 }
 
 #[derive(Debug, Clone, Serialize, TS)]

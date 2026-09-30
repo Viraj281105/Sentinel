@@ -124,3 +124,73 @@ describe("Projects page", () => {
     expect(within(list).queryByText("D:\\Projects")).not.toBeInTheDocument();
   });
 });
+
+describe("inactive project cleanup", () => {
+  it("previews only inactive projects and moves only confirmed eligible folders", async () => {
+    const calls: { cmd: string; args: unknown }[] = [];
+    const venv = "D:\\Projects\\old-api\\.venv";
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args });
+      switch (cmd) {
+        case "project_searches":
+          return [search("D:\\Projects", [active, stale])];
+        case "project_cleanup_preview":
+          return {
+            operationId: "op-p",
+            auditSeq: 7,
+            preview: {
+              provider: {
+                id: "project-artifacts",
+                name: "Rebuildable folders in inactive projects",
+                category: "developerDependencies",
+                risk: "mediumRisk",
+                description: "",
+                onRemoval: "",
+                minAgeDays: 90,
+                canClean: true,
+                note: null,
+              },
+              dryRun: true,
+              generatedAtMs: Date.now(),
+              roots: [{ state: "scanned", path: "D:\\Projects\\old-api" }],
+              items: [
+                { path: venv, kind: "folder", bytes: 700 * MB, files: 900, newestModifiedMs: Date.now() - 200 * DAY, decision: { state: "eligible" } },
+                { path: "D:\\Projects\\old-api\\build", kind: "folder", bytes: 0, files: 0, newestModifiedMs: null, decision: { state: "protected", reason: "Git tracks files in this folder" } },
+              ],
+              eligibleBytes: 700 * MB,
+              eligibleFiles: 900,
+              eligibleItems: 1,
+              incomplete: false,
+            },
+          };
+        case "project_cleanup_run":
+          return {
+            operationId: "op-r",
+            manifest: {
+              version: 1,
+              operationId: "op-r",
+              provider: "project-artifacts",
+              user: "u",
+              createdAtMs: Date.now(),
+              expiresAtMs: Date.now() + 14 * DAY,
+              entries: [{ index: 0, originalPath: venv, kind: "folder", bytes: 700 * MB, files: 900, status: { state: "quarantined" } }],
+            },
+          };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    render(<Projects />);
+    await userEvent.click(await screen.findByRole("button", { name: "Preview cleanup" }));
+    expect(calls).toContainEqual({ cmd: "project_cleanup_preview", args: { projects: ["D:\\Projects\\old-api"] } });
+    await userEvent.click(await screen.findByRole("tab", { name: /Kept \(1\)/ }));
+    expect(screen.getByText("Protected: Git tracks files in this folder")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Move 1 item to quarantine/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Move to quarantine" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Moved 1 item (700 MB) to quarantine.");
+    expect(calls).toContainEqual({
+      cmd: "project_cleanup_run",
+      args: { projects: ["D:\\Projects\\old-api"], approved: [venv] },
+    });
+  });
+});
