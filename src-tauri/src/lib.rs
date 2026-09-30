@@ -6,6 +6,7 @@
 
 mod commands;
 mod logging;
+mod scans;
 
 use std::path::PathBuf;
 
@@ -16,6 +17,7 @@ use tauri::Manager;
 pub(crate) struct AppState {
     pub log_dir: PathBuf,
     pub policy: Policy,
+    pub scans: scans::ScanManager,
 }
 
 pub fn run() {
@@ -27,6 +29,7 @@ pub fn run() {
             app.manage(AppState {
                 log_dir,
                 policy: Policy::for_system(),
+                scans: scans::ScanManager::default(),
             });
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sentinel started");
             Ok(())
@@ -35,6 +38,11 @@ pub fn run() {
             commands::system::app_info,
             commands::safety::protected_locations,
             commands::storage::list_drives,
+            commands::scan::start_scan,
+            commands::scan::cancel_scan,
+            commands::scan::scan_status,
+            commands::scan::scan_listing,
+            commands::scan::scan_largest_files,
         ])
         .run(tauri::generate_context!());
 

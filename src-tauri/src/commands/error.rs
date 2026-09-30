@@ -14,6 +14,12 @@ pub struct CommandError {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum ErrorKind {
+    /// The request itself was invalid (e.g. a path that is not a folder).
+    InvalidInput,
+    /// The requested item does not exist (e.g. no finished scan yet).
+    NotFound,
+    /// Another operation of the same kind is already running.
+    Busy,
     /// A Windows API Sentinel depends on failed.
     System,
     /// A bug in Sentinel itself (e.g. a background task panicked).
@@ -26,7 +32,12 @@ impl CommandError {
             kind,
             message: message.into(),
         };
-        tracing::error!(kind = ?err.kind, message = %err.message, "command failed");
+        match kind {
+            ErrorKind::System | ErrorKind::Internal => {
+                tracing::error!(kind = ?err.kind, message = %err.message, "command failed");
+            }
+            _ => tracing::debug!(kind = ?err.kind, message = %err.message, "command rejected"),
+        }
         err
     }
 

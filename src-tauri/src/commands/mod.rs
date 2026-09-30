@@ -7,5 +7,6 @@
 
 pub(crate) mod error;
 pub(crate) mod safety;
+pub(crate) mod scan;
 pub(crate) mod storage;
 pub(crate) mod system;

@@ -2708,6 +2708,7 @@ dependencies = [
  "serde",
  "tauri",
  "tauri-build",
+ "tempfile",
  "thiserror 2.0.21",
  "tracing",
  "tracing-appender",

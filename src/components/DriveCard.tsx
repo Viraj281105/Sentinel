@@ -1,4 +1,5 @@
 import { AlertTriangle, HardDrive, Usb, Network, Disc, MemoryStick, HelpCircle } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Drive } from "../bindings/Drive";
 import type { DriveKind } from "../bindings/DriveKind";
 import { formatBytes, percent } from "../lib/format";
@@ -55,7 +56,7 @@ function UsageMeter({ used, total, low, name }: { used: number; total: number; l
   );
 }
 
-export function DriveCard({ drive }: { drive: Drive }) {
+export function DriveCard({ drive, action }: { drive: Drive; action?: ReactNode }) {
   const { icon: Icon, label: kindLabel } = KIND[drive.kind];
   const name = driveName(drive);
   const space = drive.space;
@@ -78,6 +79,7 @@ export function DriveCard({ drive }: { drive: Drive }) {
             Low space
           </span>
         )}
+        {action}
       </header>
       {space ? (
         <>

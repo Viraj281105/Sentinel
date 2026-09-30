@@ -42,12 +42,13 @@ function mockBackend(opts: { fail?: boolean; drivesError?: CommandError } = {}) 
     if (opts.fail) throw new Error("backend unavailable");
     if (cmd === "protected_locations") return locations;
     if (cmd === "app_info") return info;
+    if (cmd === "scan_status") return { running: null, last: null };
     if (cmd === "list_drives") {
       if (opts.drivesError) throw opts.drivesError;
       return drives;
     }
     throw new Error(`unexpected command ${cmd}`);
-  });
+  }, { shouldMockEvents: true });
 }
 
 describe("App", () => {

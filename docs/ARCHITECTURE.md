@@ -118,7 +118,8 @@ Crates are created only when their first real feature lands (no empty scaffoldin
 ### Implemented: `src-tauri` (`sentinel-app`)
 
 - Thin shell: `AppState` holds the log directory and a `Policy` built once at startup.
-- Commands (`src-tauri/src/commands/`): `app_info`, `protected_locations`, `list_drives`. Each wraps a
+- Commands (`src-tauri/src/commands/`): `app_info`, `protected_locations`, `list_drives`,
+  `start_scan`, `cancel_scan`, `scan_status`, `scan_listing`, `scan_largest_files`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -134,6 +135,13 @@ Crates are created only when their first real feature lands (no empty scaffoldin
   logged at `error` level where it is constructed. New kinds are added when a command needs
   them, not in advance.
 - Blocking work (`list_drives`) runs on `spawn_blocking` so it never stalls the UI thread.
+- `scans::ScanManager` owns background scans: one at a time (`busy` otherwise), on a
+  dedicated thread, with a reporter thread emitting `scan-progress` every 250 ms and a
+  final `scan-finished` / `scan-failed` event. The latest finished `ScanTree` is kept in
+  memory; the UI fetches one level at a time (`scan_listing`, top 200 children plus a
+  summary of the rest) and `scan_largest_files`, so the full tree never crosses IPC.
+  `scan_status` lets a remounted page recover a running scan. Events go through a
+  `ScanEvents` trait so the manager is tested without Tauri.
 
 ### Implemented: `sentinel-scanner`
 

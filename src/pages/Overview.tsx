@@ -35,7 +35,7 @@ function StorageSummary() {
         </p>
       ))}
       <p className="text-slate-500 dark:text-slate-400">
-        What is using the space is not analyzed yet (next milestone).
+        Use Analyze on the Storage page to see which folders and files use this space.
       </p>
     </div>
   );
