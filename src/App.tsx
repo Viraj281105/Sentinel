@@ -5,6 +5,7 @@ import { PAGES, type PageId } from "./lib/nav";
 import { Activity } from "./pages/Activity";
 import { Cleanup } from "./pages/Cleanup";
 import { Overview } from "./pages/Overview";
+import { Projects } from "./pages/Projects";
 import { Settings } from "./pages/Settings";
 import { Storage } from "./pages/Storage";
 
@@ -18,6 +19,8 @@ function Page({ id }: { id: PageId }) {
       return <Cleanup />;
     case "activity":
       return <Activity />;
+    case "projects":
+      return <Projects />;
     case "settings":
       return <Settings />;
     default: {

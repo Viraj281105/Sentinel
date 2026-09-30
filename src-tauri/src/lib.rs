@@ -27,6 +27,7 @@ pub(crate) struct AppState {
 
 pub fn run() {
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let log_dir = app.path().app_log_dir()?;
             let guard = logging::init(&log_dir)?;
@@ -59,6 +60,9 @@ pub fn run() {
             commands::cleanup::cleanup_preview,
             commands::activity::audit_log,
             commands::activity::audit_verify,
+            commands::projects::project_searches,
+            commands::projects::find_projects,
+            commands::projects::remove_project_search,
         ])
         .run(tauri::generate_context!());
 

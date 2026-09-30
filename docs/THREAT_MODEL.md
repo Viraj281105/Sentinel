@@ -2,7 +2,7 @@
 
 Status: rows T1, T2 and T3 are implemented in `sentinel-safety` (see SAFETY_MODEL.md for
 limits). T14 is partly implemented: strict CSP with no remote origins, `freezePrototype`,
-and a single capability granting `core:default`. The only command that accepts a path is
+and a single capability granting `core:default` plus `dialog:allow-open` (the native folder picker; it returns only what the user picks). The only command that accepts a path is
 `start_scan`, which is read-only; the path must be an existing absolute folder and is
 canonicalized by `sentinel-safety` before use. Drill-down takes opaque node ids, not paths. T17 has
 CI `npm audit`/`cargo audit` and committed lockfiles. All other mitigations are still

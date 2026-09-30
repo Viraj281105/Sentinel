@@ -120,6 +120,13 @@ BEGIN SELECT RAISE(ABORT, 'the audit log is append-only'); END;
 CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
 BEGIN SELECT RAISE(ABORT, 'the audit log is append-only'); END;
 ",
+    r"
+CREATE TABLE project_searches (
+    root           TEXT    PRIMARY KEY COLLATE NOCASE,
+    searched_at_ms INTEGER NOT NULL,
+    result         TEXT    NOT NULL
+) WITHOUT ROWID;
+",
 ];
 
 /// How much of each scan to keep.
@@ -601,4 +608,47 @@ fn insert_nodes(tx: &Transaction<'_>, scan: ScanId, tree: &ScanTree, min: u64) -
     }
     tracing::debug!(scan, stored, total = n, "scan tree stored");
     Ok(())
+}
+
+/// A saved project search: the folder searched, when, and the result as JSON (opaque to
+/// the store).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSearchRow {
+    pub root: String,
+    pub searched_at_ms: i64,
+    pub result_json: String,
+}
+
+impl Store {
+    /// Save (or replace) the latest search of `root`.
+    pub fn save_project_search(&self, root: &str, at_ms: i64, result_json: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO project_searches (root, searched_at_ms, result) VALUES (?1, ?2, ?3)
+             ON CONFLICT(root) DO UPDATE SET searched_at_ms = ?2, result = ?3",
+            params![root, at_ms, result_json],
+        )?;
+        Ok(())
+    }
+
+    pub fn project_searches(&self) -> Result<Vec<ProjectSearchRow>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT root, searched_at_ms, result FROM project_searches ORDER BY root")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(ProjectSearchRow {
+                root: r.get(0)?,
+                searched_at_ms: r.get(1)?,
+                result_json: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Forget a searched folder. Returns whether it existed.
+    pub fn remove_project_search(&self, root: &str) -> Result<bool> {
+        Ok(self
+            .conn
+            .execute("DELETE FROM project_searches WHERE root = ?1", [root])?
+            > 0)
+    }
 }

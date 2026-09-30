@@ -9,6 +9,7 @@ import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
 import type { LargeFileView } from "../bindings/LargeFileView";
 import type { PreviewResponse } from "../bindings/PreviewResponse";
+import type { ProjectSearch } from "../bindings/ProjectSearch";
 import type { ProtectedLocation } from "../bindings/ProtectedLocation";
 import type { ProviderInfo } from "../bindings/ProviderInfo";
 import type { ScanStatus } from "../bindings/ScanStatus";
@@ -28,6 +29,9 @@ export const ipc = {
   cleanupPreview: (provider: string) => invoke<PreviewResponse>("cleanup_preview", { provider }),
   auditLog: (limit: number, before: number | null = null) => invoke<AuditEntry[]>("audit_log", { limit, before }),
   auditVerify: () => invoke<AuditIntegrity>("audit_verify"),
+  projectSearches: () => invoke<ProjectSearch[]>("project_searches"),
+  findProjects: (root: string) => invoke<ProjectSearch>("find_projects", { root }),
+  removeProjectSearch: (root: string) => invoke<boolean>("remove_project_search", { root }),
 };
 
 /** Turn whatever a rejected command produced into text a person can read. */

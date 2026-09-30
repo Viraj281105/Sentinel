@@ -37,7 +37,7 @@ Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, 
 
 ## Phase 4 – Dev ecosystem 🚧
 1. ✅ `sentinel-devenv`: read-only project detection (Node, Python, Rust, Java/Maven/Gradle, .NET, Go, Ruby, Docker), package managers from lockfiles, runtime requirements, Git, last activity, rebuildable artifacts with sizes (real run: 19 projects under D:\Projects in under a second)
-2. Projects page: choose folders to search, saved results, inactive projects and their artifact sizes (next)
+2. ✅ Projects page: folders chosen with the system folder picker, saved searches (store v4), rebuildable space, projects inactive for 90+ days, per-project runtimes and artifacts
 3. Package caches (npm, pnpm, Yarn, pip) as analysis-only providers; Maven/Gradle cache analysis
 
 ## Phase 5 – Inventory & graph ⬜

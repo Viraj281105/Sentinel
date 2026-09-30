@@ -41,7 +41,7 @@ export const PAGES: PageDef[] = [
   { id: "cleanup", label: "Cleanup", icon: Brush, plannedPhase: null, summary: "Policy-checked cleanup with dry-run, quarantine and restore." },
   { id: "software", label: "Software", icon: Package, plannedPhase: 5, summary: "Installed applications from the registry, winget and the Store, deduplicated." },
   { id: "dependencies", label: "Dependencies", icon: Layers, plannedPhase: 5, summary: "Runtimes, the projects that use them, and their disk footprint." },
-  { id: "projects", label: "Projects", icon: FolderGit2, plannedPhase: 4, summary: "Detected development projects, their artifacts and environments." },
+  { id: "projects", label: "Projects", icon: FolderGit2, plannedPhase: null, summary: "Detected development projects, their artifacts and environments." },
   { id: "environments", label: "Environments", icon: Boxes, plannedPhase: 5, summary: "Language runtimes and toolchains with active and stale versions." },
   { id: "containers", label: "Containers", icon: Container, plannedPhase: 6, summary: "Docker images, containers, volumes and WSL distributions (read-only)." },
   { id: "assistant", label: "AI Assistant", icon: Sparkles, plannedPhase: 8, summary: "Optional, advisory natural-language analysis. Off by default." },

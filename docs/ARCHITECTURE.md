@@ -120,7 +120,8 @@ Crates are created only when their first real feature lands (no empty scaffoldin
 - Thin shell: `AppState` holds the log directory and a `Policy` built once at startup.
 - Commands (`src-tauri/src/commands/`): `app_info`, `protected_locations`, `list_drives`,
   `drive_trends`, `start_scan`, `cancel_scan`, `scan_status`, `scan_listing`,
-  `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only). Each wraps a
+  `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only), `project_searches`,
+  `find_projects`, `remove_project_search`, `audit_log`, `audit_verify`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -278,7 +279,7 @@ Database: `%LOCALAPPDATA%\dev.sentinel.app\sentinel.db` (WAL, foreign keys on,
 modified. If the file cannot be opened the app runs on an in-memory database and says
 so in Settings.
 
-Implemented (schema v3; v2 added `scan_categories`, v3 added `audit_log`):
+Implemented (schema v4; v2 added `scan_categories`, v3 `audit_log`, v4 `project_searches`):
 
 | Table | Contents |
 |---|---|
@@ -287,6 +288,7 @@ Implemented (schema v3; v2 added `scan_categories`, v3 added `audit_log`):
 | `scan_largest_files` | per scan: ranked path and size |
 | `drive_snapshots` | root, time, total and free bytes (at most hourly, recorded when drives are listed) |
 | `scan_categories` | per scan: category key and bytes (absent for scans saved before v2) |
+| `project_searches` | per searched folder: time and the latest detection result as JSON (replaced on each search) |
 | `audit_log` | append-only: seq, time, operation id, kind, provider, Windows user, items, bytes, policy, approval, outcome, errors, details (JSON), prev_hash, hash. Triggers reject UPDATE and DELETE |
 
 Audit chain: `hash = SHA-256(canonical JSON of the record, including seq and prev_hash)`,

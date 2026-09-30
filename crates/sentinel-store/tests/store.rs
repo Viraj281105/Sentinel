@@ -188,7 +188,7 @@ fn file_database_persists_across_reopen() {
             .unwrap()
     };
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 3);
+    assert_eq!(s.schema_version().unwrap(), 4);
     assert_eq!(s.latest_scan().unwrap().unwrap().id, id);
 }
 
@@ -277,20 +277,41 @@ fn upgrades_a_version_1_database_in_place() {
         s.save_scan(&tree("C:\\", 80 * MB), &[], 0, 1, Retention::default())
             .unwrap()
     };
-    // Turn it back into a schema-1 database: the table added by migration 2 is gone.
+    // Turn it back into a schema-1 database: drop every table added by later migrations.
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
         conn.execute_batch(
-            "DROP TABLE audit_log; DROP TABLE scan_categories; PRAGMA user_version = 1;",
+            "DROP TABLE project_searches; DROP TABLE audit_log; DROP TABLE scan_categories;
+             PRAGMA user_version = 1;",
         )
         .unwrap();
     }
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 3);
+    assert_eq!(s.schema_version().unwrap(), 4);
     assert_eq!(
         s.latest_scan().unwrap().unwrap().id,
         id,
         "existing data kept"
     );
     assert!(s.scan_categories(id).unwrap().is_empty());
+}
+
+#[test]
+fn project_searches_are_replaced_per_root_and_removable() {
+    let s = Store::open_in_memory().unwrap();
+    s.save_project_search(r"D:\Projects", 1, "{\"v\":1}")
+        .unwrap();
+    s.save_project_search(r"d:\projects", 2, "{\"v\":2}")
+        .unwrap();
+    s.save_project_search(r"C:\src", 3, "{}").unwrap();
+    let rows = s.project_searches().unwrap();
+    assert_eq!(rows.len(), 2, "same folder regardless of case");
+    let d = rows
+        .iter()
+        .find(|r| r.root.eq_ignore_ascii_case(r"D:\Projects"))
+        .unwrap();
+    assert_eq!((d.searched_at_ms, d.result_json.as_str()), (2, "{\"v\":2}"));
+    assert!(s.remove_project_search(r"C:\SRC").unwrap());
+    assert!(!s.remove_project_search(r"C:\src").unwrap());
+    assert_eq!(s.project_searches().unwrap().len(), 1);
 }
