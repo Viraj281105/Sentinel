@@ -2,8 +2,10 @@
 
 Status: path validation (`sentinel-safety`), dry-run previews (`sentinel-cleanup`), the
 audit log (`sentinel-store`) and the quarantine executor (`sentinel-quarantine`) are
-implemented. **The executor is not connected to the app**: it has only ever run against
-test fixtures, and no UI or command can invoke it until the maintainer approves that.
+implemented. The executor is connected to the app (maintainer approval, 2026-09-30):
+items move only after the user confirms a list of exactly those items on the Cleanup
+page, and the backend re-checks each one. Expired quarantine is purged in the background
+at startup. The first real run on the maintainer's machine has not happened yet.
 
 **Audit rule for the executor:** the audit record for an operation is written before any
 file is touched, and if it cannot be written the operation does not run. A second record
@@ -21,7 +23,7 @@ preview is still shown.
    per-operation UAC prompt, designed and reviewed separately.
 3. **No permanent deletion in v1:** every removal goes to quarantine.
 
-**Refinement of decision 1 (implementation, pending maintainer confirmation):** on the
+**Refinement of decision 1 (confirmed by the maintainer, 2026-09-30):** on the
 volume that holds the user profile, quarantine lives at
 `%LOCALAPPDATA%\Sentinel\.sentinel-quarantine`, not `C:\.sentinel-quarantine`. Reason: a
 folder created at a drive root inherits that root's ACL, and other local accounts can
@@ -31,7 +33,12 @@ folder (moves stay instant renames), and keeps the protected folder name. Quaran
 other volumes is not implemented; items there are refused until a location with an
 owner-only protected ACL and ownership verification is designed.
 
-## Quarantine executor (implemented, not wired to the app)
+## Quarantine executor
+
+In the app: `cleanup_run(provider, approved)` accepts 1 to 10,000 paths, which the UI
+takes only from a preview's eligible items after the user confirms a dialog listing every
+one (focus starts on Cancel; Escape cancels). `quarantine_restore` restores one item.
+Both write audit records through the same database-backed sink as previews.
 
 For `quarantine(policy, provider, approved, …)`:
 

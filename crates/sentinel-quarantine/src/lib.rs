@@ -137,6 +137,7 @@ pub struct PurgeReport {
     pub errors: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
 pub struct Quarantine {
     root: PathBuf,
 }

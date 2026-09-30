@@ -4,14 +4,17 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AppInfo } from "../bindings/AppInfo";
 import type { AuditEntry } from "../bindings/AuditEntry";
 import type { AuditIntegrity } from "../bindings/AuditIntegrity";
+import type { CleanupRunResponse } from "../bindings/CleanupRunResponse";
 import type { DirListing } from "../bindings/DirListing";
 import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
 import type { LargeFileView } from "../bindings/LargeFileView";
+import type { ManifestEntry } from "../bindings/ManifestEntry";
 import type { PreviewResponse } from "../bindings/PreviewResponse";
 import type { ProjectSearch } from "../bindings/ProjectSearch";
 import type { ProtectedLocation } from "../bindings/ProtectedLocation";
 import type { ProviderInfo } from "../bindings/ProviderInfo";
+import type { QuarantineContents } from "../bindings/QuarantineContents";
 import type { ScanStatus } from "../bindings/ScanStatus";
 
 // Fallible commands reject with a `CommandError` ({ kind, message }).
@@ -32,6 +35,11 @@ export const ipc = {
   projectSearches: () => invoke<ProjectSearch[]>("project_searches"),
   findProjects: (root: string) => invoke<ProjectSearch>("find_projects", { root }),
   removeProjectSearch: (root: string) => invoke<boolean>("remove_project_search", { root }),
+  cleanupRun: (provider: string, approved: string[]) =>
+    invoke<CleanupRunResponse>("cleanup_run", { provider, approved }),
+  quarantineContents: () => invoke<QuarantineContents>("quarantine_contents"),
+  quarantineRestore: (operationId: string, index: number) =>
+    invoke<ManifestEntry>("quarantine_restore", { operationId, index }),
 };
 
 /** Turn whatever a rejected command produced into text a person can read. */

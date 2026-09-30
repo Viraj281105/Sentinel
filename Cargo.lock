@@ -2792,6 +2792,7 @@ dependencies = [
  "sentinel-classify",
  "sentinel-cleanup",
  "sentinel-devenv",
+ "sentinel-quarantine",
  "sentinel-safety",
  "sentinel-scanner",
  "sentinel-store",

@@ -121,7 +121,8 @@ Crates are created only when their first real feature lands (no empty scaffoldin
 - Commands (`src-tauri/src/commands/`): `app_info`, `protected_locations`, `list_drives`,
   `drive_trends`, `start_scan`, `cancel_scan`, `scan_status`, `scan_listing`,
   `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only), `project_searches`,
-  `find_projects`, `remove_project_search`, `audit_log`, `audit_verify`. Each wraps a
+  `find_projects`, `remove_project_search`, `audit_log`, `audit_verify`, `cleanup_run`,
+  `quarantine_contents`, `quarantine_restore`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -236,7 +237,7 @@ Nested projects (monorepo packages, workspace members) are separate projects. Fo
 - sizes from one scanner pass over the project folder (a parent project's total includes
   nested projects).
 
-### Implemented: `sentinel-quarantine` (not wired to the app)
+### Implemented: `sentinel-quarantine`
 
 The only crate that moves or deletes user files. `Quarantine::quarantine`, `restore` and
 `purge_expired` take a `Policy`, the provider, an audit sink (`FnMut(NewAuditRecord)`) and

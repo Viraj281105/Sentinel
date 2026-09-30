@@ -23,6 +23,8 @@ pub(crate) struct AppState {
     /// Windows account name, recorded in audit entries.
     pub user: String,
     pub scans: scans::ScanManager,
+    /// The user's quarantine; `None` if the profile folder cannot be located.
+    pub quarantine: Option<sentinel_quarantine::Quarantine>,
 }
 
 pub fn run() {
@@ -33,6 +35,15 @@ pub fn run() {
             let guard = logging::init(&log_dir)?;
             app.manage(guard);
             let db = db::Db::open(&app.path().app_local_data_dir()?)?;
+            let user = audit::current_user();
+            let quarantine = sentinel_quarantine::Quarantine::for_current_user();
+            if let Some(q) = &quarantine {
+                commands::quarantine::purge_expired_in_background(
+                    q.clone(),
+                    db.clone(),
+                    user.clone(),
+                );
+            }
             app.manage(AppState {
                 log_dir,
                 policy: Policy::for_system(),
@@ -41,7 +52,8 @@ pub fn run() {
                     std::sync::Arc::new(sentinel_classify::Classifier::for_system()),
                 ),
                 db,
-                user: audit::current_user(),
+                user,
+                quarantine,
             });
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sentinel started");
             Ok(())
@@ -63,6 +75,9 @@ pub fn run() {
             commands::projects::project_searches,
             commands::projects::find_projects,
             commands::projects::remove_project_search,
+            commands::quarantine::cleanup_run,
+            commands::quarantine::quarantine_contents,
+            commands::quarantine::quarantine_restore,
         ])
         .run(tauri::generate_context!());
 

@@ -9,6 +9,7 @@ pub(crate) mod activity;
 pub(crate) mod cleanup;
 pub(crate) mod error;
 pub(crate) mod projects;
+pub(crate) mod quarantine;
 pub(crate) mod safety;
 pub(crate) mod scan;
 pub(crate) mod storage;

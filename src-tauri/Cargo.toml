@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 sentinel-classify = { path = "../crates/sentinel-classify" }
 sentinel-devenv = { path = "../crates/sentinel-devenv" }
+sentinel-quarantine = { path = "../crates/sentinel-quarantine" }
 sentinel-cleanup = { path = "../crates/sentinel-cleanup" }
 sentinel-safety = { path = "../crates/sentinel-safety" }
 sentinel-scanner = { path = "../crates/sentinel-scanner" }

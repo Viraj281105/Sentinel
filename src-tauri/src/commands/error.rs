@@ -20,6 +20,8 @@ pub enum ErrorKind {
     NotFound,
     /// Another operation of the same kind is already running.
     Busy,
+    /// A safety rule refused the request (e.g. restoring over an existing file).
+    Refused,
     /// A Windows API Sentinel depends on failed.
     System,
     /// A bug in Sentinel itself (e.g. a background task panicked).

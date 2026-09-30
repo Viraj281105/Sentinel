@@ -31,7 +31,7 @@ Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, 
 1. ✅ `sentinel-cleanup`: provider contract, user-TEMP provider, dry-run preview (validation, protected descendants, age, links, limits)
 2. ✅ Cleanup page with dry-run preview: provider description, risk and minimum age; what would be removed vs kept, with the reason for each item
 3. ✅ Executor (`sentinel-quarantine`, fixture-tested, **not wired to the app**): audit-first, re-assessment before each move, rename by verified handle, manifest, restore without overwrite, 14-day purge without following links, in-use items skipped
-3b. Wire Clean up / Restore into the app (needs maintainer approval to act on the real TEMP folder)
+3b. ✅ Wired into the app: "Move N items to quarantine…" with a confirmation listing every item, run result with reasons for anything left in place, Quarantine panel with Restore, purge of expired items at startup
 4. ✅ Append-only, hash-chained audit log (SQLite triggers + SHA-256 chain + verifier); previews recorded as dry runs; Activity page with integrity check
 5. More providers: crash dumps, Recycle Bin; Windows TEMP / Update cache after the elevation design
 
@@ -66,10 +66,10 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Awaiting maintainer decision: connect the executor to the app ("Clean up" on the Cleanup
-page with an explicit confirmation listing exactly what moves, a Quarantine view with
-Restore, and purge on app start). This would be the first time Sentinel changes files on
-the real machine.
+First real cleanup on the maintainer's machine, run by the maintainer from the Cleanup page
+(currently one empty TEMP folder is eligible), then restore it to confirm the round trip.
+After that: package caches (npm, pnpm, Yarn, pip) as analysis-first providers, and linking
+inactive projects' artifacts to cleanup.
 
 ## Completed first milestone (historical)
 
