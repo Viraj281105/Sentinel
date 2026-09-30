@@ -1,6 +1,6 @@
 # Sentinel Architecture
 
-Status: **Phase 1 in progress. Only `sentinel-safety` is implemented.** This document describes
+Status: **Phase 1 complete: `sentinel-safety`, the Tauri shell and the React frontend exist.** This document describes
 the discovered environment and the intended architecture. Sections marked *(planned)*
 are not implemented.
 
@@ -115,6 +115,30 @@ Crates are created only when their first real feature lands (no empty scaffoldin
 - `Policy::allowed_root` / `Policy::validate` – produce `AllowedRoot` / `ValidatedTarget`; links are never followed; `revalidate` compares volume serial + file index taken from an open handle.
 - `RiskLevel` – ordered, `Protected` never actionable.
 
+### Implemented: `src-tauri` (`sentinel-app`)
+
+- Thin shell: `AppState` holds the log directory and a `Policy` built once at startup.
+- Commands (`src-tauri/src/commands/`): `app_info`, `protected_locations`. Each wraps a
+  plain function that is unit-tested without a running app. Commands are registered by
+  full module path because `#[tauri::command]` companion items do not survive re-exports.
+- IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
+  `src/bindings/` (via `TS_RS_EXPORT_DIR` in `.cargo/config.toml`). CI fails if the
+  committed bindings are stale.
+- Logging: `tracing` to a daily-rotated file (14 kept) in the app log dir
+  (`%LOCALAPPDATA%\dev.sentinel.app\logs`), plus stderr in debug builds. Level via
+  `SENTINEL_LOG` (EnvFilter syntax, default `info`).
+- Webview hardening: strict CSP (no remote origins), `freezePrototype`, single
+  capability file granting only `core:default`.
+- No structured command error type yet: current commands are infallible. It will be
+  introduced with the first fallible command (drive discovery) rather than speculatively.
+
+### Implemented: frontend (`src/`)
+
+React 19 + TypeScript (strict) + Vite + Tailwind 4, `lucide-react` icons. No component
+library yet; one will be chosen when real data tables/charts arrive (Phase 2). Pages
+without a backend render `NotImplemented` with their roadmap phase and no data. Tests
+use Vitest + Testing Library with `@tauri-apps/api/mocks` at the IPC boundary only.
+
 ## 3. Key design decisions
 
 | Decision | Choice | Rationale |
@@ -127,7 +151,7 @@ Crates are created only when their first real feature lands (no empty scaffoldin
 | Deletion | Default = quarantine (move) with manifest; permanent delete only for provider-declared safe cases; Recycle Bin via `IFileOperation` where useful | Reversibility |
 | Path safety | Canonicalize (`\\?\` aware), reject reparse points unless explicitly resolved, re-check by handle immediately before act | TOCTOU/junction attacks |
 | Logging | `tracing` with structured fields + operation IDs, redaction of paths under sensitive dirs | Observability without leaking secrets |
-| IPC | Typed Tauri commands; types shared to TS via generated bindings (e.g. `specta`/`ts-rs`) | No hand-written drift |
+| IPC | Typed Tauri commands; types shared to TS via `ts-rs` generated bindings | No hand-written drift; `ts-rs` is stable and independent of Tauri's release cycle, unlike `tauri-specta` |
 | AI | `AiProvider` trait (Ollama, OpenAI-compatible); off by default | Functions fully without AI |
 | Plugins | Declarative (data-only) first; capability manifest; no native code initially | Limits blast radius |
 | Elevation | App runs unelevated; privileged actions (Windows TEMP, Update cache) go through a separate, minimal elevated helper *(planned, needs security review)* | Least privilege |
@@ -149,4 +173,4 @@ or secrets are ever stored.
 
 1. Elevation model: helper process vs. per-operation UAC prompt (decide at Phase 3).
 2. Whether USN Journal monitoring justifies its admin requirement vs. `ReadDirectoryChangesW` on chosen roots (Phase 7 spike).
-3. Type-sharing tool: `specta` vs `ts-rs` (Phase 1 spike).
+3. ~~Type-sharing tool~~ – resolved: `ts-rs`.

@@ -55,6 +55,14 @@ impl ProtectedSet {
         Self::default()
     }
 
+    /// Registered path roots with the reason each is protected. The built-in name and
+    /// extension rules apply everywhere and are not listed here.
+    pub fn roots(&self) -> impl Iterator<Item = (&Path, &str)> {
+        self.roots
+            .iter()
+            .map(|r| (r.path.as_path(), r.reason.as_str()))
+    }
+
     /// Protect `path` and everything beneath it. The path need not exist yet.
     pub fn add_root(&mut self, path: &Path, reason: &str) {
         self.add_root_with_exceptions(path, reason, &[]);

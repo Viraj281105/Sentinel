@@ -10,12 +10,12 @@ follows the master directive, adjusted for what was discovered in Phase 0.
 - ✅ Architecture, threat model, safety model, development docs
 - Finding: Rust toolchain was missing (now installed); C: has only ~37 GiB free.
 
-## Phase 1 – Foundations 🚧
+## Phase 1 – Foundations ✅
 1. ✅ Rust 1.98 installed to `D:\Installed\Rust`
 2. ✅ Cargo workspace; `sentinel-core` deferred until it has a real consumer (no premature abstraction)
 3. ✅ `sentinel-safety`: path canonicalization, protected-path set, risk levels, `Policy::validate` → `ValidatedTarget` with identity revalidation (20 tests)
-4. Tauri 2 shell + React/Vite/Tailwind skeleton, IPC with generated types, tracing
-5. CI skeleton (fmt, clippy, tests, frontend lint/build)
+4. ✅ Tauri 2 shell + React/Vite/Tailwind, `ts-rs` IPC types, file logging; Overview and Settings show real protected-location data, other pages are honest placeholders
+5. ✅ CI on `windows-latest`: fmt, typecheck, lint, tests, build, clippy, binding freshness, Tauri build, npm/cargo audit
 
 ## Phase 2 – Storage intelligence ⬜
 Drive discovery → cancellable parallel scanner → SQLite cache/history → classifier → Overview/Storage pages.
@@ -53,7 +53,9 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Tauri 2 shell + React/Vite/Tailwind skeleton with tracing and typed IPC.
+`feat(storage): implement drive discovery` – enumerate fixed volumes via Win32
+(capacity, free space, filesystem, volume label), first fallible command with a typed
+IPC error, Overview/Storage wired to real drive data.
 
 ## Completed first milestone (historical)
 

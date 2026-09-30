@@ -1,7 +1,10 @@
 # Sentinel Threat Model
 
 Status: rows T1, T2 and T3 are implemented in `sentinel-safety` (see SAFETY_MODEL.md for
-limits); all other mitigations are still requirements, not claims about existing code.
+limits). T14 is partly implemented: strict CSP with no remote origins, `freezePrototype`,
+and a single capability granting `core:default`; no command accepts a path yet. T17 has
+CI `npm audit`/`cargo audit` and committed lockfiles. All other mitigations are still
+requirements, not claims about existing code.
 
 ## Assets
 

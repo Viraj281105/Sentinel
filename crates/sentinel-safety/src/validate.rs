@@ -120,6 +120,10 @@ impl Policy {
         Self::new(ProtectedSet::from_system())
     }
 
+    pub fn protected(&self) -> &ProtectedSet {
+        &self.protected
+    }
+
     /// Check an arbitrary path (e.g. a descendant found while enumerating a target)
     /// against protection rules. Does not touch the filesystem.
     pub fn check_protected(&self, path: &Path) -> Result<(), SafetyError> {
