@@ -171,6 +171,14 @@ execution strategy, and validation. The provider is *data plus pure logic*; exec
 always goes through the shared executor. Providers cannot touch paths outside their
 declared roots.
 
+Implemented contract (`CleanupProvider`): `info()` (including `min_age_days`,
+`can_clean`, `note`), `roots()`, and `is_candidate(name)`. A provider that names its
+candidates (all package caches do) can never have any other child of its root listed or
+moved: preview filters on it and the executor re-checks it for every approved path. An
+analysis-only provider (`can_clean = false`, e.g. the pnpm store, whose files are
+hard-linked into projects) is previewed for size but nothing is eligible, and the executor
+refuses it before writing anything.
+
 ## Operation lifecycle
 
 ```

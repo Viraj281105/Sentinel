@@ -214,9 +214,19 @@ protection checks (see SAFETY_MODEL.md, "Dry-run preview"). It reuses the scanne
 batched enumeration (`sentinel_scanner::dirent`, now public, with last-write times), so
 sizes are allocated bytes and ages need no extra system calls.
 
-Built-in provider: `UserTemp` (`%LOCALAPPDATA%\Temp` from the known-folder API, not
-`%TEMP%`; risk Safe; 7-day minimum age). The crate has no executor; see the
-maintainer decisions in SAFETY_MODEL.md for how execution will work.
+Built-in providers (the crate itself has no executor; `sentinel-quarantine` executes):
+
+| Id | Root (default location only) | Candidates | Min age | Cleans |
+|---|---|---|---|---|
+| `user-temp` | `%LOCALAPPDATA%\Temp` (known folder, not `%TEMP%`) | every child | 7 days | yes |
+| `npm-cache` | `%LOCALAPPDATA%\npm-cache` | `_cacache`, `_npx`, `_logs`, `_prebuilds` | 1 day | yes |
+| `yarn-cache` | `%LOCALAPPDATA%\Yarn\Cache` | `v<digits>` | 1 day | yes |
+| `pip-cache` | `%LOCALAPPDATA%\pip\cache` | `http`, `http-v2`, `wheels` | 1 day | yes |
+| `pnpm-store` | `%LOCALAPPDATA%\pnpm\store` | `v<digits>` | 1 day | no (analysis only) |
+
+Cache overrides (`.npmrc`, `npm_config_cache`, `PIP_CACHE_DIR`, `YARN_CACHE_FOLDER`) are
+not honored: `.npmrc` may hold credentials and is never read, and an override could aim a
+provider at unrelated data. Custom cache locations are therefore not cleaned.
 
 ### Implemented: `sentinel-devenv`
 

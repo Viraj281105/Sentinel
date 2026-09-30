@@ -17,4 +17,13 @@ onRemoval: string,
 /**
  * Items with anything modified more recently than this are never eligible.
  */
-minAgeDays: number, };
+minAgeDays: number, 
+/**
+ * False for analysis-only providers: they are previewed but nothing is ever
+ * eligible, and the executor refuses them.
+ */
+canClean: boolean, 
+/**
+ * Why an analysis-only provider cannot clean, or other context worth showing.
+ */
+note: string | null, };

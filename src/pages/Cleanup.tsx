@@ -239,6 +239,12 @@ function ProviderCard({ info, onMoved }: { info: ProviderInfo; onMoved: () => vo
           </p>
           <p className="text-slate-600 dark:text-slate-300">{info.description}</p>
           <p className="text-slate-500 dark:text-slate-400">{info.onRemoval}</p>
+          {info.note && (
+            <p className="text-amber-700 dark:text-amber-300">
+              {info.canClean ? "" : "Analysis only. "}
+              {info.note}
+            </p>
+          )}
         </div>
         <button
           type="button"

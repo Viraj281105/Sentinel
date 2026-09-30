@@ -39,6 +39,8 @@ impl CleanupProvider for UserTemp {
                          changed in the last 7 days is left alone because a running program \
                          may still be using it.",
             min_age_days: 7,
+            can_clean: true,
+            note: None,
         }
     }
 

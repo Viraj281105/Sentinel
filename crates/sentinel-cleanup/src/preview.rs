@@ -311,11 +311,20 @@ pub fn preview(
         roots.push(RootReport::Scanned {
             path: allowed.path().display().to_string(),
         });
-        for e in &entries {
+        for e in entries.iter().filter(|e| provider.is_candidate(&e.name)) {
             if cancel.load(Ordering::Relaxed) || ctx.out_of_budget {
                 break;
             }
-            items.push(ctx.evaluate(&allowed, e, min_age_ms, now_ms).0);
+            let mut item = ctx.evaluate(&allowed, e, min_age_ms, now_ms).0;
+            if !info.can_clean && item.decision == Decision::Eligible {
+                item.decision = Decision::Skipped {
+                    reason: info
+                        .note
+                        .unwrap_or("this cleanup type is analysis only")
+                        .to_owned(),
+                };
+            }
+            items.push(item);
         }
     }
     items.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.path.cmp(&b.path)));

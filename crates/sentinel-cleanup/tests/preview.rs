@@ -310,3 +310,59 @@ fn a_recently_created_link_inside_keeps_the_folder() {
     );
     assert!(matches!(p.items[0].decision, Decision::TooRecent { .. }));
 }
+
+mod caches {
+    use super::*;
+    use sentinel_cleanup::providers::{CacheKind, PackageCache};
+
+    #[test]
+    fn previews_list_only_known_cache_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("pip-cache");
+        put(&root.join("http-v2").join("a"), 5000, 30);
+        age(&root.join("http-v2"), 30);
+        put(&root.join("selfcheck").join("state.json"), 10, 30);
+        put(&root.join("unrelated").join("x"), 10, 30);
+        let p = preview(
+            &PackageCache::with_root(CacheKind::Pip, root),
+            &Policy::new(ProtectedSet::new()),
+            now_ms(),
+            PreviewLimits::default(),
+            &AtomicBool::new(false),
+        );
+        let names: Vec<_> = p
+            .items
+            .iter()
+            .map(|i| {
+                Path::new(&i.path)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(names, ["http-v2"]);
+        assert_eq!(p.items[0].decision, Decision::Eligible);
+    }
+
+    #[test]
+    fn analysis_only_caches_show_size_but_nothing_is_eligible() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("store");
+        put(&root.join("v10").join("files").join("a"), 8000, 30);
+        age(&root.join("v10").join("files"), 30);
+        age(&root.join("v10"), 30);
+        let p = preview(
+            &PackageCache::with_root(CacheKind::Pnpm, root),
+            &Policy::new(ProtectedSet::new()),
+            now_ms(),
+            PreviewLimits::default(),
+            &AtomicBool::new(false),
+        );
+        assert_eq!(p.eligible_items, 0);
+        assert!(p.items[0].bytes >= 8000);
+        assert!(
+            matches!(&p.items[0].decision, Decision::Skipped { reason } if reason.contains("pnpm store prune"))
+        );
+    }
+}

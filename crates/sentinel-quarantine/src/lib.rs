@@ -251,6 +251,13 @@ impl Quarantine {
         audit: &mut AuditSink<'_>,
     ) -> Result<Manifest, QuarantineError> {
         let info = provider.info();
+        if !info.can_clean {
+            // Refused before anything is touched or recorded.
+            return Err(QuarantineError::Refused(format!(
+                "'{}' is analysis only and cannot be cleaned",
+                info.name
+            )));
+        }
         audit(NewAuditRecord {
             at_ms: ctx.now_ms,
             operation_id: ctx.operation_id.to_owned(),
@@ -364,17 +371,26 @@ impl Quarantine {
         let volume = drive_of(&root);
 
         for (i, path) in approved.iter().enumerate() {
-            let status = self.move_one(
-                policy,
-                &info,
-                &provider_roots,
-                volume.as_deref(),
-                &op_dir,
-                path,
-                i,
-                ctx.now_ms,
-                &mut manifest.entries[i],
-            );
+            let known = path
+                .file_name()
+                .is_some_and(|n| provider.is_candidate(&n.to_string_lossy()));
+            let status = if known {
+                self.move_one(
+                    policy,
+                    &info,
+                    &provider_roots,
+                    volume.as_deref(),
+                    &op_dir,
+                    path,
+                    i,
+                    ctx.now_ms,
+                    &mut manifest.entries[i],
+                )
+            } else {
+                EntryStatus::Skipped {
+                    reason: "not something this cleanup type handles".into(),
+                }
+            };
             manifest.entries[i].status = status;
             Self::write_manifest(&op_dir, &manifest)?;
         }

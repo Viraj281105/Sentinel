@@ -21,6 +21,8 @@ const provider: ProviderInfo = {
   description: "Files that programs create in your temporary folder.",
   onRemoval: "Programs recreate temporary files when they need them.",
   minAgeDays: 7,
+  canClean: true,
+  note: null,
 };
 const T = "C:\\Users\\u\\AppData\\Local\\Temp\\";
 const preview: Preview = {
@@ -178,5 +180,46 @@ describe("Cleanup page", () => {
     render(<Cleanup />);
     await userEvent.click(await screen.findByRole("button", { name: /^Preview$/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("There is no cleanup type called x.");
+  });
+});
+
+describe("analysis-only providers", () => {
+  it("say why they cannot clean and offer no move", async () => {
+    const pnpm: ProviderInfo = {
+      ...provider,
+      id: "pnpm-store",
+      name: "pnpm package store",
+      category: "packageCaches",
+      minAgeDays: 1,
+      canClean: false,
+      note: "pnpm's store is hard-linked into every project's node_modules. Run `pnpm store prune`.",
+    };
+    const skipped: Preview = {
+      ...preview,
+      provider: pnpm,
+      items: [
+        {
+          path: String.raw`C:\store\v10`,
+          kind: "folder",
+          bytes: 900 * MB,
+          files: 10,
+          newestModifiedMs: Date.now() - 40 * DAY,
+          decision: { state: "skipped", reason: "analysis only" },
+        },
+      ],
+      eligibleBytes: 0,
+      eligibleFiles: 0,
+      eligibleItems: 0,
+    };
+    mockIPC((cmd) => {
+      if (cmd === "cleanup_providers") return [pnpm];
+      if (cmd === "cleanup_preview") return { preview: skipped, operationId: "op-p", auditSeq: 1 };
+      if (cmd === "quarantine_contents") return { root: "q", operations: [], problems: [] };
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<Cleanup />);
+    expect(await screen.findByText(/Analysis only\./)).toHaveTextContent("pnpm store prune");
+    await previewNow();
+    expect(screen.queryByRole("button", { name: /to quarantine/ })).not.toBeInTheDocument();
   });
 });

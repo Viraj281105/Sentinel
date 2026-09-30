@@ -63,16 +63,28 @@ pub struct ProviderInfo {
     pub on_removal: &'static str,
     /// Items with anything modified more recently than this are never eligible.
     pub min_age_days: u32,
+    /// False for analysis-only providers: they are previewed but nothing is ever
+    /// eligible, and the executor refuses them.
+    pub can_clean: bool,
+    /// Why an analysis-only provider cannot clean, or other context worth showing.
+    pub note: Option<&'static str>,
 }
 
 /// A source of cleanup candidates.
 ///
 /// Providers only describe; they never decide safety. Candidates are the direct
-/// children of each root, and every one is validated by the policy engine.
+/// children of each root that [`CleanupProvider::is_candidate`] accepts, and every one
+/// is validated by the policy engine.
 pub trait CleanupProvider: Send + Sync {
     fn info(&self) -> ProviderInfo;
 
     /// Folders whose direct children are candidates. Missing folders are reported,
     /// not treated as errors.
     fn roots(&self) -> Vec<PathBuf>;
+
+    /// Whether a direct child of a root, by name, belongs to this provider. Entries it
+    /// rejects are neither listed nor ever touched.
+    fn is_candidate(&self, _name: &str) -> bool {
+        true
+    }
 }

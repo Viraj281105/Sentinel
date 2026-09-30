@@ -481,3 +481,99 @@ fn refuses_a_quarantine_folder_whose_parent_is_a_link() {
     );
     assert!(f.temp.join("old.log").exists());
 }
+
+mod caches {
+    use super::*;
+    use sentinel_cleanup::providers::{CacheKind, PackageCache};
+
+    /// npm-cache/{_cacache, _npx, my-notes}, all 30 days old.
+    fn npm_fixture(f: &Fx) -> (PathBuf, PackageCache) {
+        let root = f.temp.parent().unwrap().join("npm-cache");
+        put(
+            &root.join("_cacache").join("index-v5").join("a"),
+            b"index",
+            30,
+        );
+        put(&root.join("_npx").join("x").join("package.json"), b"{}", 30);
+        put(&root.join("my-notes").join("todo.txt"), b"mine", 30);
+        for d in [
+            "_cacache/index-v5",
+            "_cacache",
+            "_npx/x",
+            "_npx",
+            "my-notes",
+        ] {
+            age(&root.join(d), 30);
+        }
+        (root.clone(), PackageCache::with_root(CacheKind::Npm, root))
+    }
+
+    #[test]
+    fn moves_only_the_caches_known_folders() {
+        let f = fx();
+        let (root, npm) = npm_fixture(&f);
+        let mut log = Log::new();
+        let approved = [
+            root.join("_cacache"),
+            root.join("_npx"),
+            root.join("my-notes"),
+        ];
+        let m =
+            f.q.quarantine(
+                &f.policy,
+                &npm,
+                &approved,
+                &ctx("op-1", now_ms()),
+                &mut sink(&mut log),
+            )
+            .unwrap();
+        assert_eq!(status(&m, 0), &EntryStatus::Quarantined);
+        assert_eq!(status(&m, 1), &EntryStatus::Quarantined);
+        assert!(matches!(status(&m, 2), EntryStatus::Skipped { .. }));
+        assert!(root.join("my-notes").join("todo.txt").exists());
+        assert!(!root.join("_cacache").exists());
+    }
+
+    #[test]
+    fn recently_used_caches_are_left_alone() {
+        let f = fx();
+        let (root, npm) = npm_fixture(&f);
+        put(&root.join("_cacache").join("fresh"), b"x", 0);
+        let mut log = Log::new();
+        let m =
+            f.q.quarantine(
+                &f.policy,
+                &npm,
+                &[root.join("_cacache")],
+                &ctx("op-1", now_ms()),
+                &mut sink(&mut log),
+            )
+            .unwrap();
+        assert!(
+            matches!(status(&m, 0), EntryStatus::Skipped { reason } if reason.contains("recently"))
+        );
+    }
+
+    #[test]
+    fn analysis_only_providers_are_refused_before_anything_happens() {
+        let f = fx();
+        let store = f.temp.parent().unwrap().join("pnpm-store");
+        put(&store.join("v10").join("files").join("a"), b"x", 30);
+        let pnpm = PackageCache::with_root(CacheKind::Pnpm, store.clone());
+        let mut log = Log::new();
+        let r = f.q.quarantine(
+            &f.policy,
+            &pnpm,
+            &[store.join("v10")],
+            &ctx("op-1", now_ms()),
+            &mut sink(&mut log),
+        );
+        assert!(matches!(r, Err(QuarantineError::Refused(_))));
+        assert!(
+            log.is_empty(),
+            "nothing recorded because nothing was attempted"
+        );
+        assert!(store.join("v10").exists());
+        assert!(!f.q.root().exists());
+    }
+}

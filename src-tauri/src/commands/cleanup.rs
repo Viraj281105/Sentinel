@@ -107,6 +107,15 @@ mod tests {
     #[test]
     fn lists_builtin_providers() {
         let ids: Vec<_> = cleanup_providers().iter().map(|p| p.id).collect();
-        assert_eq!(ids, ["user-temp"]);
+        assert_eq!(
+            ids,
+            [
+                "user-temp",
+                "npm-cache",
+                "yarn-cache",
+                "pip-cache",
+                "pnpm-store"
+            ]
+        );
     }
 }
