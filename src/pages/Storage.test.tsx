@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { DirListing } from "../bindings/DirListing";
 import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
-import type { LargeFile } from "../bindings/LargeFile";
+import type { LargeFileView } from "../bindings/LargeFileView";
 import type { SavedScan } from "../bindings/SavedScan";
 import type { ScanFinishedEvent } from "../bindings/ScanFinishedEvent";
 import type { ScanProgressEvent } from "../bindings/ScanProgressEvent";
@@ -34,6 +34,11 @@ const saved: SavedScan = {
   finishedAtMs: Date.UTC(2026, 8, 30, 10, 0),
   minFolderBytes: 1024 * 1024,
   previous,
+  categories: [
+    { category: "packageCaches", bytes: 100 * GB },
+    { category: "windows", bytes: 60 * GB },
+    { category: "unknown", bytes: 40 * GB },
+  ],
   stats: {
     dirs: 10,
     files: 40,
@@ -60,9 +65,28 @@ const listings: Record<number, DirListing> = {
     filesBytes: 20 * GB,
     filesHere: 2,
     status: complete,
+    classification: null,
     children: [
-      { id: 1, name: "Users", totalBytes: 150 * GB, fileCount: 30, hasChildren: true, status: complete, previousBytes: 145 * GB },
-      { id: 2, name: "Windows", totalBytes: 30 * GB, fileCount: 8, hasChildren: false, status: complete, previousBytes: null },
+      {
+        id: 1,
+        name: "Users",
+        totalBytes: 150 * GB,
+        fileCount: 30,
+        hasChildren: true,
+        status: complete,
+        previousBytes: 145 * GB,
+        classification: null,
+      },
+      {
+        id: 2,
+        name: "Windows",
+        totalBytes: 30 * GB,
+        fileCount: 8,
+        hasChildren: false,
+        status: complete,
+        previousBytes: null,
+        classification: { category: "windows", rule: "windows", reason: "Windows system files" },
+      },
       {
         id: 3,
         name: "Documents and Settings",
@@ -71,6 +95,7 @@ const listings: Record<number, DirListing> = {
         hasChildren: false,
         status: { state: "link", kind: "junction" },
         previousBytes: null,
+        classification: null,
       },
       {
         id: 4,
@@ -80,6 +105,11 @@ const listings: Record<number, DirListing> = {
         hasChildren: false,
         status: { state: "accessDenied" },
         previousBytes: null,
+        classification: {
+          category: "windows",
+          rule: "root.system-volume-information",
+          reason: "System restore points and volume shadow copies",
+        },
       },
     ],
     hiddenChildren: 12,
@@ -98,8 +128,18 @@ const listings: Record<number, DirListing> = {
     filesBytes: 0,
     filesHere: 0,
     status: complete,
+    classification: null,
     children: [
-      { id: 5, name: "dev", totalBytes: 150 * GB, fileCount: 30, hasChildren: false, status: complete, previousBytes: 150 * GB },
+      {
+        id: 5,
+        name: "dev",
+        totalBytes: 150 * GB,
+        fileCount: 30,
+        hasChildren: false,
+        status: complete,
+        previousBytes: 150 * GB,
+        classification: null,
+      },
     ],
     hiddenChildren: 0,
     hiddenBytes: 0,
@@ -107,7 +147,14 @@ const listings: Record<number, DirListing> = {
     previousTotalBytes: 145 * GB,
   },
 };
-const largest: LargeFile[] = [{ path: String.raw`C:\pagefile.sys`, bytes: 8 * GB, logicalBytes: 8 * GB }];
+const largest: LargeFileView[] = [
+  {
+    path: String.raw`C:\pagefile.sys`,
+    bytes: 8 * GB,
+    logicalBytes: 8 * GB,
+    classification: { category: "windows", rule: "root.pagefile", reason: "Windows page file (virtual memory)" },
+  },
+];
 
 function mockBackend(status: ScanStatus = { running: null, last: null }, trends: DriveTrend[] = []) {
   const calls: { cmd: string; args: unknown }[] = [];
@@ -188,6 +235,15 @@ describe("Storage analysis", () => {
     expect(screen.getByText(/12 smaller folders \(3\.00 MB\) not listed individually/)).toBeInTheDocument();
     expect(await screen.findByText(String.raw`C:\pagefile.sys`)).toBeInTheDocument();
 
+    // Category breakdown: largest first, "Not classified" last, shares of the total.
+    const breakdown = screen.getByText("Package caches").closest("ul") as HTMLElement;
+    const labels = within(breakdown).getAllByRole("listitem").map((li) => li.textContent ?? "");
+    expect(labels[0]).toMatch(/^Package caches.*50\.0%$/);
+    expect(labels[2]).toMatch(/^Not classified.*20\.0%$/);
+    // Tags explain classified folders and files; unclassified ones get none.
+    expect(screen.getByTitle("Windows page file (virtual memory)")).toHaveTextContent("Windows");
+    expect(screen.getByTitle("System restore points and volume shadow copies")).toBeInTheDocument();
+
     // Comparison with the previous analysis of the same drive.
     expect(screen.getByText(/Since the previous analysis on/)).toBeInTheDocument();
     expect(screen.getByText("+10.0 GB")).toBeInTheDocument();
@@ -203,7 +259,13 @@ describe("Storage analysis", () => {
     expect(screen.getByText("unchanged")).toBeInTheDocument();
 
     await userEvent.click(within(path).getByRole("button", { name: C }));
-    expect(await screen.findByText("Windows")).toBeInTheDocument();
+    expect((await screen.findAllByText("Windows")).length).toBeGreaterThan(0);
+  });
+
+  it("says when an old analysis has no category breakdown", async () => {
+    mockBackend({ running: null, last: { ...saved, categories: [] } });
+    render(<Storage />);
+    expect(await screen.findByText(/saved before Sentinel classified storage/)).toBeInTheDocument();
   });
 
   it("shows the last saved analysis when the page opens", async () => {

@@ -5,7 +5,7 @@ import type { AppInfo } from "../bindings/AppInfo";
 import type { DirListing } from "../bindings/DirListing";
 import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
-import type { LargeFile } from "../bindings/LargeFile";
+import type { LargeFileView } from "../bindings/LargeFileView";
 import type { ProtectedLocation } from "../bindings/ProtectedLocation";
 import type { ScanStatus } from "../bindings/ScanStatus";
 
@@ -19,7 +19,7 @@ export const ipc = {
   cancelScan: (id: number) => invoke<boolean>("cancel_scan", { id }),
   scanStatus: () => invoke<ScanStatus>("scan_status"),
   scanListing: (scanId: number, node: number) => invoke<DirListing>("scan_listing", { scanId, node }),
-  scanLargestFiles: (scanId: number) => invoke<LargeFile[]>("scan_largest_files", { scanId }),
+  scanLargestFiles: (scanId: number) => invoke<LargeFileView[]>("scan_largest_files", { scanId }),
 };
 
 /** Turn whatever a rejected command produced into text a person can read. */

@@ -26,7 +26,8 @@ pub enum StoreError {
 pub type Result<T> = std::result::Result<T, StoreError>;
 
 /// Ordered, append-only schema migrations. Never edit a shipped entry.
-const MIGRATIONS: &[&str] = &[r"
+const MIGRATIONS: &[&str] = &[
+    r"
 CREATE TABLE scans (
     id                  INTEGER PRIMARY KEY,
     root                TEXT    NOT NULL COLLATE NOCASE,
@@ -80,7 +81,16 @@ CREATE TABLE drive_snapshots (
     free_bytes  INTEGER NOT NULL,
     PRIMARY KEY (root, taken_at_ms)
 ) WITHOUT ROWID;
-"];
+",
+    r"
+CREATE TABLE scan_categories (
+    scan_id  INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+    category TEXT    NOT NULL,
+    bytes    INTEGER NOT NULL,
+    PRIMARY KEY (scan_id, category)
+) WITHOUT ROWID;
+",
+];
 
 /// How much of each scan to keep.
 #[derive(Debug, Clone, Copy)]
@@ -197,10 +207,12 @@ impl Store {
             .pragma_query_value(None, "user_version", |r| r.get(0))?)
     }
 
-    /// Persist a finished scan and apply retention. Returns the new scan id.
+    /// Persist a finished scan with its per-category byte totals (category keys are
+    /// opaque to the store) and apply retention. Returns the new scan id.
     pub fn save_scan(
         &mut self,
         tree: &ScanTree,
+        categories: &[(&str, u64)],
         started_at_ms: i64,
         finished_at_ms: i64,
         retention: Retention,
@@ -233,6 +245,14 @@ impl Store {
         )?;
         let id = tx.last_insert_rowid();
         insert_nodes(&tx, id, tree, retention.min_node_bytes)?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO scan_categories (scan_id, category, bytes) VALUES (?1, ?2, ?3)",
+            )?;
+            for (category, bytes) in categories {
+                stmt.execute(params![id, category, to_i(*bytes)])?;
+            }
+        }
         {
             let mut stmt = tx.prepare(
                 "INSERT INTO scan_largest_files (scan_id, rank, path, bytes, logical_bytes)
@@ -411,6 +431,17 @@ impl Store {
             }
         }
         Ok(Some(cur))
+    }
+
+    /// Per-category byte totals saved with a scan, largest first. Empty for scans saved
+    /// before classification existed.
+    pub fn scan_categories(&self, scan: ScanId) -> Result<Vec<(String, u64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT category, bytes FROM scan_categories WHERE scan_id = ?1
+             ORDER BY bytes DESC, category",
+        )?;
+        let rows = stmt.query_map([scan], |r| Ok((r.get(0)?, to_u(r.get(1)?))))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn largest_files(&self, scan: ScanId) -> Result<Vec<LargeFile>> {

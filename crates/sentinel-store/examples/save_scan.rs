@@ -22,7 +22,7 @@ fn main() {
     let run = || -> Result<(), sentinel_store::StoreError> {
         let mut store = Store::open(&db)?;
         let t = Instant::now();
-        let id = store.save_scan(&tree, 0, 1, Retention::default())?;
+        let id = store.save_scan(&tree, &[], 0, 1, Retention::default())?;
         let save = t.elapsed();
         let t = Instant::now();
         let kids = store.children(id, 0, 200)?;

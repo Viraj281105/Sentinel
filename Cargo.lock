@@ -2764,6 +2764,7 @@ dependencies = [
 name = "sentinel-app"
 version = "0.1.0"
 dependencies = [
+ "sentinel-classify",
  "sentinel-safety",
  "sentinel-scanner",
  "sentinel-store",

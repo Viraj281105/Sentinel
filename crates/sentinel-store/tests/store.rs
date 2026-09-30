@@ -78,7 +78,9 @@ fn tree(root: &str, big: u64) -> ScanTree {
 fn roundtrips_scan_summary_tree_and_files() {
     let mut s = Store::open_in_memory().unwrap();
     let t = tree("C:\\", 80 * MB);
-    let id = s.save_scan(&t, 1000, 2000, Retention::default()).unwrap();
+    let id = s
+        .save_scan(&t, &[], 1000, 2000, Retention::default())
+        .unwrap();
 
     let rec = s.latest_scan().unwrap().unwrap();
     assert_eq!(rec.id, id);
@@ -114,7 +116,7 @@ fn roundtrips_scan_summary_tree_and_files() {
 fn pruning_keeps_tree_connected_and_summarizes_dropped_folders() {
     let mut s = Store::open_in_memory().unwrap();
     let id = s
-        .save_scan(&tree("C:\\", 80 * MB), 0, 1, Retention::default())
+        .save_scan(&tree("C:\\", 80 * MB), &[], 0, 1, Retention::default())
         .unwrap();
     let root = s.node(id, 0).unwrap().unwrap();
     assert_eq!((root.pruned_children, root.pruned_bytes), (1, 500 * 1024));
@@ -140,7 +142,7 @@ fn pruning_keeps_tree_connected_and_summarizes_dropped_folders() {
 fn children_beyond_limit_are_counted() {
     let mut s = Store::open_in_memory().unwrap();
     let id = s
-        .save_scan(&tree("C:\\", 80 * MB), 0, 1, Retention::default())
+        .save_scan(&tree("C:\\", 80 * MB), &[], 0, 1, Retention::default())
         .unwrap();
     assert_eq!(s.children(id, 0, 1).unwrap().len(), 1);
     assert_eq!(s.children_beyond(id, 0, 1).unwrap(), (1, 0));
@@ -151,9 +153,9 @@ fn children_beyond_limit_are_counted() {
 fn previous_scan_is_same_root_and_earlier() {
     let mut s = Store::open_in_memory().unwrap();
     let r = Retention::default();
-    let c1 = s.save_scan(&tree("C:\\", 80 * MB), 0, 100, r).unwrap();
-    let _d = s.save_scan(&tree("D:\\", 80 * MB), 0, 150, r).unwrap();
-    let c2 = s.save_scan(&tree("C:\\", 90 * MB), 0, 200, r).unwrap();
+    let c1 = s.save_scan(&tree("C:\\", 80 * MB), &[], 0, 100, r).unwrap();
+    let _d = s.save_scan(&tree("D:\\", 80 * MB), &[], 0, 150, r).unwrap();
+    let c2 = s.save_scan(&tree("C:\\", 90 * MB), &[], 0, 200, r).unwrap();
     assert_eq!(s.previous_scan(c2).unwrap().unwrap().id, c1);
     assert!(s.previous_scan(c1).unwrap().is_none());
     assert_eq!(s.latest_scan().unwrap().unwrap().id, c2);
@@ -166,10 +168,10 @@ fn retention_deletes_old_scans_and_their_rows() {
         keep_scans_per_root: 2,
         ..Retention::default()
     };
-    let first = s.save_scan(&tree("C:\\", 80 * MB), 0, 1, r).unwrap();
-    let d = s.save_scan(&tree("D:\\", 80 * MB), 0, 2, r).unwrap();
-    s.save_scan(&tree("C:\\", 80 * MB), 0, 3, r).unwrap();
-    s.save_scan(&tree("C:\\", 80 * MB), 0, 4, r).unwrap();
+    let first = s.save_scan(&tree("C:\\", 80 * MB), &[], 0, 1, r).unwrap();
+    let d = s.save_scan(&tree("D:\\", 80 * MB), &[], 0, 2, r).unwrap();
+    s.save_scan(&tree("C:\\", 80 * MB), &[], 0, 3, r).unwrap();
+    s.save_scan(&tree("C:\\", 80 * MB), &[], 0, 4, r).unwrap();
     assert!(s.scan(first).unwrap().is_none());
     assert!(s.node(first, 0).unwrap().is_none());
     assert!(s.largest_files(first).unwrap().is_empty());
@@ -182,11 +184,11 @@ fn file_database_persists_across_reopen() {
     let path = dir.path().join("nested").join("sentinel.db");
     let id = {
         let mut s = Store::open(&path).unwrap();
-        s.save_scan(&tree("C:\\", 80 * MB), 0, 1, Retention::default())
+        s.save_scan(&tree("C:\\", 80 * MB), &[], 0, 1, Retention::default())
             .unwrap()
     };
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 1);
+    assert_eq!(s.schema_version().unwrap(), 2);
     assert_eq!(s.latest_scan().unwrap().unwrap().id, id);
 }
 
@@ -229,4 +231,64 @@ fn drive_snapshots_are_throttled_and_ordered() {
         [500, 400]
     );
     assert_eq!(s.drive_history("C:\\", 1).unwrap().len(), 1);
+}
+
+#[test]
+fn category_totals_roundtrip_and_cascade() {
+    let mut s = Store::open_in_memory().unwrap();
+    let r = Retention {
+        keep_scans_per_root: 1,
+        ..Retention::default()
+    };
+    let id = s
+        .save_scan(
+            &tree("C:\\", 80 * MB),
+            &[("windows", 5), ("unknown", 9), ("packageCaches", 7)],
+            0,
+            1,
+            r,
+        )
+        .unwrap();
+    assert_eq!(
+        s.scan_categories(id).unwrap(),
+        [
+            ("unknown".to_owned(), 9),
+            ("packageCaches".to_owned(), 7),
+            ("windows".to_owned(), 5)
+        ]
+    );
+    let newer = s.save_scan(&tree("C:\\", 80 * MB), &[], 0, 2, r).unwrap();
+    assert!(
+        s.scan_categories(id).unwrap().is_empty(),
+        "deleted with its scan"
+    );
+    assert!(
+        s.scan_categories(newer).unwrap().is_empty(),
+        "none recorded"
+    );
+}
+
+#[test]
+fn upgrades_a_version_1_database_in_place() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("sentinel.db");
+    let id = {
+        let mut s = Store::open(&path).unwrap();
+        s.save_scan(&tree("C:\\", 80 * MB), &[], 0, 1, Retention::default())
+            .unwrap()
+    };
+    // Turn it back into a schema-1 database: the table added by migration 2 is gone.
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("DROP TABLE scan_categories; PRAGMA user_version = 1;")
+            .unwrap();
+    }
+    let s = Store::open(&path).unwrap();
+    assert_eq!(s.schema_version().unwrap(), 2);
+    assert_eq!(
+        s.latest_scan().unwrap().unwrap().id,
+        id,
+        "existing data kept"
+    );
+    assert!(s.scan_categories(id).unwrap().is_empty());
 }

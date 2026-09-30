@@ -1,11 +1,13 @@
 import { AlertTriangle, ChevronRight, CornerDownRight, EyeOff, File, Folder, Link2, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { Classification } from "../bindings/Classification";
 import type { DirChild } from "../bindings/DirChild";
 import type { DirListing } from "../bindings/DirListing";
-import type { LargeFile } from "../bindings/LargeFile";
+import type { LargeFileView } from "../bindings/LargeFileView";
 import type { NodeStatus } from "../bindings/NodeStatus";
 import type { SavedScan } from "../bindings/SavedScan";
 import type { ScanProgressEvent } from "../bindings/ScanProgressEvent";
+import { CATEGORY } from "../lib/categories";
 import { formatBytes, formatDateTime, formatDelta, percent } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
 import { ErrorNote, Loading, Panel } from "./ui";
@@ -97,6 +99,60 @@ function statusLabel(status: NodeStatus): { text: string; icon: typeof Link2 } |
   }
 }
 
+/** Category tag with the deciding rule's reason on hover. */
+function CategoryTag({ c }: { c: Classification }) {
+  return (
+    <span
+      title={c.reason}
+      className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+    >
+      {CATEGORY[c.category].label}
+    </span>
+  );
+}
+
+function CategoryBreakdown({ last }: { last: SavedScan }) {
+  if (last.categories.length === 0) {
+    return (
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        This analysis was saved before Sentinel classified storage. Analyze the drive again to see
+        the breakdown.
+      </p>
+    );
+  }
+  const total = last.categories.reduce((s, c) => s + c.bytes, 0);
+  // Largest first, but "Not classified" always last so it reads as a remainder.
+  const rows = [...last.categories].sort((a, b) =>
+    a.category === "unknown" ? 1 : b.category === "unknown" ? -1 : b.bytes - a.bytes,
+  );
+  return (
+    <ul className="space-y-1">
+      {rows.map((c) => {
+        const pct = percent(c.bytes, total);
+        const meta = CATEGORY[c.category];
+        const unknown = c.category === "unknown";
+        return (
+          <li key={c.category} className="flex items-center gap-3 text-sm" title={meta.description}>
+            <span className={`w-52 truncate ${unknown ? "text-slate-500 dark:text-slate-400" : ""}`}>{meta.label}</span>
+            <span className="flex flex-1 items-center" aria-hidden>
+              <span className="h-2 w-full overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-950">
+                <span
+                  className={`block h-full rounded-full ${unknown ? "bg-slate-400 dark:bg-slate-500" : "bg-emerald-600 dark:bg-emerald-400"}`}
+                  style={{ width: `${Math.max(pct, 0.5)}%` }}
+                />
+              </span>
+            </span>
+            <span className="w-20 text-right tabular-nums">{formatBytes(c.bytes)}</span>
+            <span className="w-12 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">
+              {pct.toFixed(1)}%
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function changeText(child: DirChild, compared: boolean): string {
   if (!compared || child.status.state !== "complete") return "";
   if (child.previousBytes === null) return "new or was under 1 MB";
@@ -106,11 +162,14 @@ function changeText(child: DirChild, compared: boolean): string {
 function Row({
   child,
   parentTotal,
+  parentRule,
   compared,
   onOpen,
 }: {
   child: DirChild;
   parentTotal: number;
+  /** Rule that classified the folder being listed; children that merely inherit it get no tag. */
+  parentRule: string | null;
   compared: boolean;
   onOpen: () => void;
 }) {
@@ -120,8 +179,13 @@ function Row({
   const content = (
     <>
       <Folder className="size-4 shrink-0 text-slate-400" aria-hidden />
-      <span className="w-64 min-w-0 truncate" title={child.name}>
-        {child.name}
+      <span className="flex w-72 min-w-0 items-center gap-2">
+        <span className="truncate" title={child.name}>
+          {child.name}
+        </span>
+        {child.classification && child.classification.rule !== parentRule && (
+          <CategoryTag c={child.classification} />
+        )}
       </span>
       {label ? (
         <span className="flex flex-1 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -224,7 +288,14 @@ function FolderExplorer({ scanId }: { scanId: number }) {
       </nav>
       <ul>
         {listing.children.map((c) => (
-          <Row key={c.id} child={c} parentTotal={listing.totalBytes} compared={listing.comparedTo !== null} onOpen={() => setNode(c.id)} />
+          <Row
+            key={c.id}
+            child={c}
+            parentTotal={listing.totalBytes}
+            parentRule={listing.classification?.rule ?? null}
+            compared={listing.comparedTo !== null}
+            onOpen={() => setNode(c.id)}
+          />
         ))}
         {listing.filesHere > 0 && (
           <li className="flex items-center gap-3 px-2 py-1.5 text-sm text-slate-500 dark:text-slate-400">
@@ -252,7 +323,7 @@ function FolderExplorer({ scanId }: { scanId: number }) {
 }
 
 function LargestFiles({ scanId }: { scanId: number }) {
-  const [files, setFiles] = useState<LargeFile[] | null>(null);
+  const [files, setFiles] = useState<LargeFileView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -275,6 +346,7 @@ function LargestFiles({ scanId }: { scanId: number }) {
           <span className="flex-1 truncate font-mono text-xs" title={f.path}>
             {f.path}
           </span>
+          {f.classification && <CategoryTag c={f.classification} />}
           <span className="w-20 text-right tabular-nums">{formatBytes(f.bytes)}</span>
         </li>
       ))}
@@ -287,6 +359,9 @@ export function ScanResults({ last }: { last: SavedScan }) {
     <div className="space-y-4">
       <Panel title={`Analysis of ${last.root}`}>
         <ScanSummary last={last} />
+      </Panel>
+      <Panel title="Space by category">
+        <CategoryBreakdown last={last} />
       </Panel>
       <Panel title="Largest folders">
         <FolderExplorer key={last.scanId} scanId={last.scanId} />

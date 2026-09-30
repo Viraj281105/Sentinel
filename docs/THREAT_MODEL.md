@@ -37,6 +37,7 @@ in `sentinel-cleanup`.
 | T2 | Symlink/junction redirection to a protected target | Never follow reparse points during scan or delete; delete the link, not the target; canonicalize and re-check ancestry before acting |
 | T3 | TOCTOU (path swapped between validation and delete) | Open by handle, verify identity (volume serial + file ID) and reparse status on the handle, act via handle-relative operations; re-validate at execute time |
 | T4 | Malicious/erroneous cleanup rules | Rules are data validated against the same policy; a rule cannot lower a path below its protection level; built-in providers use an allowlist of roots |
+| T20 | Misclassification leading to harmful advice or action (e.g. a folder named `node_modules` or `$Recycle.Bin` created to look disposable) | Classification rules are compiled in, not user-supplied; categories are display-only and never grant cleanup eligibility (SAFETY_MODEL principle 6); unmatched paths stay `Unknown` |
 | T5 | Malicious plugin | Data-only in v1; capability manifest (`filesystem.read`, `filesystem.cleanup`, `process.inspect`, `network.none`); dangerous capabilities need explicit user approval; plugins cannot bypass the policy engine |
 | T6 | Compromised or prompt-injected AI provider / malicious AI output | AI output is a suggestion only; strict JSON schema; unknown fields rejected; policy engine re-derives risk deterministically; AI has no executor handle |
 | T7 | Prompt injection via filenames/project files | AI receives only structured metadata with sanitized, length-limited fields; never file contents |

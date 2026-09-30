@@ -17,11 +17,13 @@ follows the master directive, adjusted for what was discovered in Phase 0.
 4. ✅ Tauri 2 shell + React/Vite/Tailwind, `ts-rs` IPC types, file logging; Overview and Settings show real protected-location data, other pages are honest placeholders
 5. ✅ CI on `windows-latest`: fmt, typecheck, lint, tests, build, clippy, binding freshness, Tauri build, npm/cargo audit
 
-## Phase 2 – Storage intelligence 🚧
+## Phase 2 – Storage intelligence ✅
 1. ✅ Drive discovery (`sentinel-scanner`): Win32 volume enumeration, capacity, low-space flag; Storage page and Overview summary on real data; typed `CommandError`
 2. ✅ Cancellable parallel directory scanner (budgets, exclusions, link safety, largest files) with live progress, cancel, folder drill-down and largest files in the Storage page
 3. ✅ SQLite persistence (`sentinel-store`): analyses survive restarts, per-folder change since the previous analysis, hourly drive capacity snapshots with 30-day free-space trend
-4. Deterministic classifier (categories per the master directive; unknown stays unknown)
+4. ✅ Deterministic classifier (`sentinel-classify`): rule table with reasons, category breakdown per analysis, category tags on folders and files; unknown stays unknown
+
+Deferred from Phase 2 to Phase 7 (monitoring): incremental rescans and a scan scheduler.
 
 ## Phase 3 – Cleanup framework ⬜
 `CleanupProvider` trait, plan/dry-run, quarantine + restore, audit log, executor;
@@ -56,10 +58,11 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-`feat(classify): deterministic storage classification` – rule table mapping known
-locations (Windows, Program Files, package caches, browser data, WSL/Docker disks, temp,
-user data) to the directive's categories, applied to scan nodes; anything unmatched stays
-`Unknown`; category breakdown on the Storage page.
+`feat(cleanup): provider framework with dry-run only` – `sentinel-cleanup` crate with the
+`CleanupProvider` contract, a user-TEMP provider (discovery, age eligibility, risk,
+explanation) and a dry-run preview built entirely on `sentinel-safety` validation. No
+executor yet: execution, quarantine layout and elevation are security-sensitive design
+decisions that need maintainer sign-off first (see SAFETY_MODEL.md open decisions).
 
 ## Completed first milestone (historical)
 

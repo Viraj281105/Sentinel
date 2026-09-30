@@ -10,6 +10,10 @@ Status: path validation is implemented in `sentinel-safety`; providers, executor
 4. Every destructive operation is dry-runnable, approved, and audited.
 5. Protected always wins: no rule, plugin, AI output or user setting lowers a
    `PROTECTED` path.
+6. Classification describes; it never authorizes. A storage category (e.g. "Package
+   caches", "Temporary files") is display information from `sentinel-classify`. Cleanup
+   eligibility comes only from a cleanup provider's own allowed roots and rules, validated
+   by `sentinel-safety`. Nothing may treat "classified as X" as "safe to delete".
 
 ## Risk levels
 

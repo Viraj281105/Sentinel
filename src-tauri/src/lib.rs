@@ -32,7 +32,10 @@ pub fn run() {
             app.manage(AppState {
                 log_dir,
                 policy: Policy::for_system(),
-                scans: scans::ScanManager::new(db.clone()),
+                scans: scans::ScanManager::new(
+                    db.clone(),
+                    std::sync::Arc::new(sentinel_classify::Classifier::for_system()),
+                ),
                 db,
             });
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sentinel started");

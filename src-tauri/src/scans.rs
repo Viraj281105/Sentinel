@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use sentinel_classify::{Category, CategoryBytes, Classification, Classifier};
 use sentinel_scanner::scan::{
     LargeFile, NodeId, NodeStatus, ScanControl, ScanOptions, ScanProgress, ScanStats, scan,
 };
@@ -65,6 +66,9 @@ pub struct SavedScan {
     #[ts(type = "number")]
     pub min_folder_bytes: u64,
     pub previous: Option<ScanRef>,
+    /// Bytes per category, largest first. Empty for analyses saved before
+    /// classification existed.
+    pub categories: Vec<CategoryBytes>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -114,6 +118,7 @@ pub struct DirChild {
     pub file_count: u64,
     pub has_children: bool,
     pub status: NodeStatus,
+    pub classification: Option<Classification>,
     /// Size in the previous analysis, if that analysis stored this folder.
     #[ts(type = "number | null")]
     pub previous_bytes: Option<u64>,
@@ -136,6 +141,7 @@ pub struct DirListing {
     #[ts(type = "number")]
     pub files_here: u64,
     pub status: NodeStatus,
+    pub classification: Option<Classification>,
     pub children: Vec<DirChild>,
     /// Subfolders not listed: too small to store, or beyond the listing limit.
     #[ts(type = "number")]
@@ -147,6 +153,19 @@ pub struct DirListing {
     /// This folder's size in that analysis, if it was stored there.
     #[ts(type = "number | null")]
     pub previous_total_bytes: Option<u64>,
+}
+
+/// One of a saved analysis's largest files, with its classification.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LargeFileView {
+    pub path: String,
+    #[ts(type = "number")]
+    pub bytes: u64,
+    #[ts(type = "number")]
+    pub logical_bytes: u64,
+    pub classification: Option<Classification>,
 }
 
 struct Running {
@@ -172,6 +191,7 @@ pub(crate) trait ScanEvents: Send + Sync + 'static {
 pub(crate) struct ScanManager {
     slot: Arc<Mutex<Slot>>,
     db: Db,
+    classifier: Arc<Classifier>,
     retention: Retention,
 }
 
@@ -189,8 +209,22 @@ fn scan_ref(r: &ScanRecord) -> ScanRef {
 }
 
 fn saved(db: &Db, rec: ScanRecord) -> Result<SavedScan, CommandError> {
-    let previous = db.lock().previous_scan(rec.id)?;
+    let (previous, categories) = {
+        let store = db.lock();
+        (store.previous_scan(rec.id)?, store.scan_categories(rec.id)?)
+    };
+    let categories = categories
+        .into_iter()
+        .filter_map(|(key, bytes)| match Category::from_key(&key) {
+            Some(category) => Some(CategoryBytes { category, bytes }),
+            None => {
+                tracing::warn!(key, "unknown category in database; ignored");
+                None
+            }
+        })
+        .collect();
     Ok(SavedScan {
+        categories,
         scan_id: rec.id,
         root: rec.root,
         finished_at_ms: rec.finished_at_ms,
@@ -201,10 +235,11 @@ fn saved(db: &Db, rec: ScanRecord) -> Result<SavedScan, CommandError> {
 }
 
 impl ScanManager {
-    pub(crate) fn new(db: Db) -> Self {
+    pub(crate) fn new(db: Db, classifier: Arc<Classifier>) -> Self {
         Self {
             slot: Arc::default(),
             db,
+            classifier,
             retention: Retention::default(),
         }
     }
@@ -247,6 +282,7 @@ impl ScanManager {
 
         let slot = Arc::clone(&self.slot);
         let db = self.db.clone();
+        let classifier = Arc::clone(&self.classifier);
         let retention = self.retention;
         let root_s = root.to_owned();
         let spawned = std::thread::Builder::new()
@@ -257,9 +293,14 @@ impl ScanManager {
                     .map_err(|e| e.to_string())
                     .and_then(|tree| {
                         let finished = now_ms();
+                        let breakdown = classifier.breakdown(&tree);
+                        let categories: Vec<(&str, u64)> = breakdown
+                            .iter()
+                            .map(|c| (c.category.key(), c.bytes))
+                            .collect();
                         let scan_id = db
                             .lock()
-                            .save_scan(&tree, started, finished, retention)
+                            .save_scan(&tree, &categories, started, finished, retention)
                             .map_err(|e| {
                                 format!("the analysis finished but could not be saved: {e}")
                             })?;
@@ -334,6 +375,8 @@ impl ScanManager {
         };
         let n = store.node(scan_id, node)?.ok_or_else(not_found)?;
         let crumbs = store.crumbs(scan_id, node)?;
+        let mut path = PathBuf::from(store.scan(scan_id)?.ok_or_else(not_found)?.root);
+        path.extend(crumbs.iter().skip(1).map(|c| c.name.as_str()));
         let children = store.children(scan_id, node, MAX_CHILDREN)?;
         let (beyond, beyond_bytes) = store.children_beyond(scan_id, node, MAX_CHILDREN)?;
 
@@ -365,9 +408,11 @@ impl ScanManager {
             files_bytes: n.own_bytes,
             files_here: n.own_files,
             status: n.status,
+            classification: self.classifier.classify(&path),
             children: children
                 .into_iter()
                 .map(|c| DirChild {
+                    classification: self.classifier.classify(&path.join(&c.name)),
                     previous_bytes: previous_children.get(&c.name.to_lowercase()).copied(),
                     id: c.id,
                     name: c.name,
@@ -384,8 +429,20 @@ impl ScanManager {
         })
     }
 
-    pub(crate) fn largest_files(&self, scan_id: ScanId) -> Result<Vec<LargeFile>, CommandError> {
-        Ok(self.db.lock().largest_files(scan_id)?)
+    pub(crate) fn largest_files(
+        &self,
+        scan_id: ScanId,
+    ) -> Result<Vec<LargeFileView>, CommandError> {
+        let files: Vec<LargeFile> = self.db.lock().largest_files(scan_id)?;
+        Ok(files
+            .into_iter()
+            .map(|f| LargeFileView {
+                classification: self.classifier.classify(std::path::Path::new(&f.path)),
+                path: f.path,
+                bytes: f.bytes,
+                logical_bytes: f.logical_bytes,
+            })
+            .collect())
     }
 }
 
@@ -468,6 +525,12 @@ mod tests {
 
     const MB: usize = 1024 * 1024;
 
+    /// A manager whose classifier has no known-folder anchors, so only name and
+    /// drive-root rules apply: results do not depend on where the temp dir lives.
+    fn manager() -> ScanManager {
+        ScanManager::new(Db::in_memory(), Arc::new(Classifier::new(&HashMap::new())))
+    }
+
     fn put(path: &std::path::Path, bytes: usize) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, vec![0u8; bytes]).unwrap();
@@ -495,7 +558,7 @@ mod tests {
     #[test]
     fn saves_scans_and_serves_drill_down_from_the_database() {
         let dir = fixture();
-        let mgr = ScanManager::new(Db::in_memory());
+        let mgr = manager();
         let s = run(&mgr, dir.path());
         assert_eq!(s.stats.files, 3);
         assert!(s.previous.is_none());
@@ -523,7 +586,7 @@ mod tests {
     #[test]
     fn compares_with_the_previous_analysis_by_path() {
         let dir = fixture();
-        let mgr = ScanManager::new(Db::in_memory());
+        let mgr = manager();
         let first = run(&mgr, dir.path());
         put(&dir.path().join("big").join("inner").join("g"), 2 * MB);
         put(&dir.path().join("fresh").join("f"), 2 * MB);
@@ -546,7 +609,7 @@ mod tests {
     #[test]
     fn rejects_bad_roots_and_concurrent_scans() {
         let dir = fixture();
-        let mgr = ScanManager::new(Db::in_memory());
+        let mgr = manager();
         let err = mgr
             .start("relative", ScanOptions::default(), recorder().0)
             .unwrap_err();
@@ -576,8 +639,51 @@ mod tests {
 
     #[test]
     fn empty_database_has_no_last_scan() {
-        let mgr = ScanManager::new(Db::in_memory());
+        let mgr = manager();
         assert!(mgr.status().unwrap().last.is_none());
         assert_eq!(mgr.listing(1, 0).unwrap_err().kind, ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn classifies_saved_scans_folders_and_files() {
+        let dir = fixture();
+        put(
+            &dir.path()
+                .join("web")
+                .join("node_modules")
+                .join("pkg")
+                .join("f"),
+            2 * MB,
+        );
+        let mgr = manager();
+        let saved = run(&mgr, dir.path());
+        let deps = saved
+            .categories
+            .iter()
+            .find(|c| c.category == Category::DeveloperDependencies)
+            .expect("developer dependencies counted");
+        assert!(deps.bytes >= (2 * MB) as u64);
+        let total: u64 = saved.categories.iter().map(|c| c.bytes).sum();
+        assert_eq!(total, saved.stats.total_bytes);
+
+        let top = mgr.listing(saved.scan_id, 0).unwrap();
+        let web = top.children.iter().find(|c| c.name == "web").unwrap();
+        assert!(web.classification.is_none(), "unknown stays unknown");
+        let inside = mgr.listing(saved.scan_id, web.id).unwrap();
+        let nm = &inside.children[0];
+        assert_eq!(nm.name, "node_modules");
+        let class = nm.classification.unwrap();
+        assert_eq!(class.category, Category::DeveloperDependencies);
+        assert_eq!(class.rule, "name.node-modules");
+
+        let files = mgr.largest_files(saved.scan_id).unwrap();
+        let f = files
+            .iter()
+            .find(|f| f.path.contains("node_modules"))
+            .unwrap();
+        assert_eq!(
+            f.classification.map(|c| c.category),
+            Some(Category::DeveloperDependencies)
+        );
     }
 }

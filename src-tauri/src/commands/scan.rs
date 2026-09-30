@@ -1,12 +1,12 @@
-use sentinel_scanner::scan::{LargeFile, NodeId, ScanOptions};
+use sentinel_scanner::scan::{NodeId, ScanOptions};
 use sentinel_store::ScanId;
 use tauri::{AppHandle, Emitter, State};
 
 use super::error::CommandError;
 use crate::AppState;
 use crate::scans::{
-    DirListing, FAILED_EVENT, FINISHED_EVENT, PROGRESS_EVENT, ScanEvents, ScanFailedEvent,
-    ScanFinishedEvent, ScanProgressEvent, ScanStatus,
+    DirListing, FAILED_EVENT, FINISHED_EVENT, LargeFileView, PROGRESS_EVENT, ScanEvents,
+    ScanFailedEvent, ScanFinishedEvent, ScanProgressEvent, ScanStatus,
 };
 
 struct TauriEvents(AppHandle);
@@ -68,6 +68,6 @@ pub(crate) fn scan_listing(
 pub(crate) fn scan_largest_files(
     state: State<'_, AppState>,
     scan_id: ScanId,
-) -> Result<Vec<LargeFile>, CommandError> {
+) -> Result<Vec<LargeFileView>, CommandError> {
     state.scans.largest_files(scan_id)
 }

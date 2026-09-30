@@ -176,6 +176,32 @@ root; each node has subtree allocated/logical bytes, file and folder counts, and
   6.4 s warm with 4 threads; about 270 k nodes held in memory.
 - Limitation: hard links are counted once per link, as Explorer does.
 
+### Implemented: `sentinel-classify`
+
+Deterministic mapping from a path to one of the directive's 14 categories. The rule
+table (`rules.rs`) is compiled-in data with three kinds of rule, each with a stable id
+and a user-facing reason:
+
+- *Location rules*: a known folder (shell API; `CARGO_HOME`/`RUSTUP_HOME` honor their
+  environment variables because the tools do) plus a relative path, e.g.
+  `LocalAppData\npm-cache` → Package caches.
+- *Name rules*: folder names that mean the same thing anywhere (`node_modules`,
+  `__pycache__`, `.venv`, `.next`, ...). Ambiguous names (`target`, `dist`, `build`,
+  `bin`, `obj`) are deliberately absent.
+- *Drive-root rules*: `$Recycle.Bin`, `pagefile.sys`, `hiberfil.sys`, `Windows.old`,
+  `PythonNNN`, ...
+
+The path is walked from the drive root; at each component a location rule is tried,
+then a name rule, then a root rule. The deepest match wins and descendants inherit it.
+No match means `Unknown`.
+
+`breakdown()` runs on the full tree before pruning: each folder's own bytes go to its
+effective category, then each of the 50 largest files is moved to its own category when
+a rule classifies it differently from its folder (so `pagefile.sys` counts as Windows,
+not as the unclassified root). Totals are stored per scan; folder and file labels are
+computed from the path when displayed. On the maintainer's C: drive 2.3 % stays
+Unknown (tool caches such as `~\.cache`).
+
 ### Implemented: frontend (`src/`)
 
 React 19 + TypeScript (strict) + Vite + Tailwind 4, `lucide-react` icons. No component
@@ -208,7 +234,7 @@ Database: `%LOCALAPPDATA%\dev.sentinel.app\sentinel.db` (WAL, foreign keys on,
 modified. If the file cannot be opened the app runs on an in-memory database and says
 so in Settings.
 
-Implemented (schema v1):
+Implemented (schema v2; v2 added `scan_categories`):
 
 | Table | Contents |
 |---|---|
@@ -216,6 +242,7 @@ Implemented (schema v1):
 | `scan_nodes` | per scan: node id, parent, name (NOCASE), subtree and own bytes, file counts, child count, pruned-children count and bytes, status (JSON) |
 | `scan_largest_files` | per scan: ranked path and size |
 | `drive_snapshots` | root, time, total and free bytes (at most hourly, recorded when drives are listed) |
+| `scan_categories` | per scan: category key and bytes (absent for scans saved before v2) |
 
 Scan trees are stored down to 1 MiB: arena order is pre-order and subtree sizes never
 grow away from the root, so one forward pass keeps a connected tree; each kept parent

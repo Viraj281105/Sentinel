@@ -13,6 +13,7 @@ workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+sentinel-classify = { path = "../crates/sentinel-classify" }
 sentinel-safety = { path = "../crates/sentinel-safety" }
 sentinel-scanner = { path = "../crates/sentinel-scanner" }
 sentinel-store = { path = "../crates/sentinel-store" }
