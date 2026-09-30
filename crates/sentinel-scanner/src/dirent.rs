@@ -25,14 +25,17 @@ const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 /// 64 KiB, 8-byte aligned.
 const BUF_WORDS: usize = 8 * 1024;
 
+/// One directory entry as reported by the file system.
 #[derive(Debug, Clone)]
-pub(crate) struct RawEntry {
+pub struct RawEntry {
     pub name: String,
     pub attributes: u32,
     pub logical_bytes: u64,
     pub allocated_bytes: u64,
     /// Reparse tag, valid only when [`RawEntry::is_reparse_point`] is true.
     pub reparse_tag: u32,
+    /// Last write time, Unix milliseconds.
+    pub modified_ms: i64,
 }
 
 impl RawEntry {
@@ -49,7 +52,7 @@ impl RawEntry {
 ///
 /// The directory is opened without following a reparse point and with full sharing,
 /// so enumeration never locks anything for other processes.
-pub(crate) fn read_dir(dir: &Path) -> io::Result<Vec<RawEntry>> {
+pub fn read_dir(dir: &Path) -> io::Result<Vec<RawEntry>> {
     let handle = OpenOptions::new()
         .access_mode(FILE_LIST_DIRECTORY)
         .share_mode(FILE_SHARE_ALL)
@@ -118,6 +121,7 @@ unsafe fn parse(base: *const u8, len: usize, out: &mut Vec<RawEntry>) {
                 attributes,
                 logical_bytes: u64::try_from(info.EndOfFile).unwrap_or(0),
                 allocated_bytes: u64::try_from(info.AllocationSize).unwrap_or(0),
+                modified_ms: filetime_to_unix_ms(info.LastWriteTime),
                 // For reparse points the EaSize field carries the reparse tag.
                 reparse_tag: if attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
                     info.EaSize
@@ -130,5 +134,45 @@ unsafe fn parse(base: *const u8, len: usize, out: &mut Vec<RawEntry>) {
             return;
         }
         off += info.NextEntryOffset as usize;
+    }
+}
+
+/// Convert a FILETIME tick count (100 ns since 1601-01-01) to Unix milliseconds.
+fn filetime_to_unix_ms(ticks: i64) -> i64 {
+    const EPOCH_DIFF_MS: i64 = 11_644_473_600_000;
+    ticks / 10_000 - EPOCH_DIFF_MS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_filetime_to_unix_ms() {
+        assert_eq!(filetime_to_unix_ms(116_444_736_000_000_000), 0);
+        assert_eq!(filetime_to_unix_ms(116_444_736_000_000_000 + 10_000), 1);
+    }
+
+    #[test]
+    fn reports_modified_time_close_to_now() {
+        let dir = std::env::temp_dir().join(format!("sentinel-dirent-{}", std::process::id()));
+        let _ = std::fs::create_dir(&dir);
+        let f = dir.join("f");
+        let _ = std::fs::write(&f, b"x");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let entries = read_dir(&dir).unwrap_or_default();
+        let _ = std::fs::remove_file(&f);
+        let _ = std::fs::remove_dir(&dir);
+        let e = entries
+            .iter()
+            .find(|e| e.name == "f")
+            .map(|e| e.modified_ms);
+        assert!(
+            e.is_some_and(|m| (now - m).abs() < 60_000),
+            "{e:?} vs {now}"
+        );
     }
 }

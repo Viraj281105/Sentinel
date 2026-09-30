@@ -1,6 +1,19 @@
 # Sentinel Safety Model
 
-Status: path validation is implemented in `sentinel-safety`; providers, executor, quarantine and audit are still design only.
+Status: path validation (`sentinel-safety`) and dry-run previews (`sentinel-cleanup`) are
+implemented. No code that deletes, moves or modifies user files exists yet; the executor,
+quarantine and audit log are designed below but not built.
+
+## Maintainer decisions (2026-09-30)
+
+1. **Quarantine location:** a per-volume `.sentinel-quarantine` folder at each drive root,
+   so removal is a same-volume move (instant, no copy, reversible). Items are kept for
+   14 days, then purged; the purge is itself audited. The folder name is a built-in
+   protected name, so no provider can target it.
+2. **Elevation:** the app always runs unelevated. Targets that need administrator rights
+   (Windows TEMP, Windows Update cache) wait for a separate minimal elevated helper or a
+   per-operation UAC prompt, designed and reviewed separately.
+3. **No permanent deletion in v1:** every removal goes to quarantine.
 
 ## Principles
 
@@ -63,6 +76,30 @@ Enforcement is **not string matching**. Procedure:
   per-descendant checks during recursive deletion (`Policy::check_protected` exists for
   the executor to use on each enumerated entry).
 - Any reparse point, including cloud-file placeholders, is treated as a link.
+
+## Dry-run preview (implemented)
+
+`sentinel_cleanup::preview` contains no filesystem-mutating call. For each provider root:
+
+1. Missing roots are reported, not errors. The root must pass `Policy::allowed_root`.
+2. Every direct child is a candidate and must pass `Policy::validate` (canonical form, no
+   link or short-name ancestors, inside the root, not protected, not containing a
+   protected location). Refusals become `Protected` or `Skipped` with the reason.
+3. Folders are walked without following links; **every** entry inside is checked with
+   `Policy::check_protected`. One protected item (a `.git`, a `.env`, a key file) makes
+   the whole candidate `Protected`.
+4. The newest modification time anywhere inside, links included, must be older than the
+   provider's minimum age, otherwise `TooRecent`. A newly created link counts as recent
+   activity.
+5. Anything that cannot be read completely (access denied, depth or entry limits,
+   cancellation) is `Skipped`, never assumed safe.
+6. A top-level link is shown as `Link` with zero size: a real run would remove the link
+   only.
+
+Tests prove the preview leaves a fixture byte-for-byte unchanged (paths, sizes, times).
+Not yet shown: which applications or projects an item belongs to (needs Phase 4/5
+inventory), and whether files are in use (only knowable at execution, where locked files
+will be skipped).
 
 ## Cleanup providers (contract)
 

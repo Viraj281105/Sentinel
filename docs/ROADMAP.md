@@ -25,9 +25,14 @@ follows the master directive, adjusted for what was discovered in Phase 0.
 
 Deferred from Phase 2 to Phase 7 (monitoring): incremental rescans and a scan scheduler.
 
-## Phase 3 – Cleanup framework ⬜
-`CleanupProvider` trait, plan/dry-run, quarantine + restore, audit log, executor;
-providers: user TEMP, crash dumps, Recycle Bin (then Windows TEMP / Update cache behind elevation design).
+## Phase 3 – Cleanup framework 🚧
+Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, no permanent deletion in v1.
+
+1. ✅ `sentinel-cleanup`: provider contract, user-TEMP provider, dry-run preview (validation, protected descendants, age, links, limits)
+2. Cleanup page with dry-run preview (next)
+3. Executor: quarantine move of revalidated targets, restore, expiry purge, locked-file handling
+4. Append-only, hash-chained audit log and Activity page
+5. More providers: crash dumps, Recycle Bin; Windows TEMP / Update cache after the elevation design
 
 ## Phase 4 – Dev ecosystem ⬜
 Project detection; npm/pnpm/yarn/pip/pytest caches; Maven/Gradle analysis (read-only first).

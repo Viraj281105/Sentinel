@@ -1,0 +1,22 @@
+[package]
+name = "sentinel-cleanup"
+description = "Cleanup providers and dry-run previews for Sentinel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sentinel-classify = { path = "../sentinel-classify" }
+sentinel-safety = { path = "../sentinel-safety" }
+sentinel-scanner = { path = "../sentinel-scanner" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tracing = "0.1"
+ts-rs = "11"
+
+[dev-dependencies]
+tempfile = "3"

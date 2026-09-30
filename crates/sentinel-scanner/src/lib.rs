@@ -4,6 +4,6 @@
 #[cfg(not(windows))]
 compile_error!("sentinel-scanner only supports Windows");
 
-mod dirent;
+pub mod dirent;
 pub mod drives;
 pub mod scan;

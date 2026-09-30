@@ -7,6 +7,10 @@ use crate::path::{fold, is_within, normalize_loose};
 /// Directory or file names that are protected wherever they appear.
 const PROTECTED_NAMES: &[(&str, &str)] = &[
     (".git", "Git repository data"),
+    (
+        ".sentinel-quarantine",
+        "Sentinel quarantine (restorable items)",
+    ),
     (".ssh", "SSH keys and configuration"),
     (".gnupg", "GPG keys"),
     (".aws", "cloud credentials"),
@@ -228,6 +232,7 @@ mod tests {
             r"C:\x\.env.local",
             r"C:\x\disk.VHDX",
             r"C:\x\keys.kdbx",
+            r"D:\.sentinel-quarantine\op-1\file",
         ] {
             assert!(set.check(Path::new(p)).is_err(), "{p}");
         }

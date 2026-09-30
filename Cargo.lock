@@ -2790,6 +2790,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-cleanup"
+version = "0.1.0"
+dependencies = [
+ "sentinel-classify",
+ "sentinel-safety",
+ "sentinel-scanner",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "ts-rs",
+]
+
+[[package]]
 name = "sentinel-safety"
 version = "0.1.0"
 dependencies = [

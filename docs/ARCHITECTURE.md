@@ -202,6 +202,19 @@ not as the unclassified root). Totals are stored per scan; folder and file label
 computed from the path when displayed. On the maintainer's C: drive 2.3 % stays
 Unknown (tool caches such as `~\.cache`).
 
+### Implemented: `sentinel-cleanup` (dry-run only)
+
+`CleanupProvider` declares `info()` (id, name, category, risk, what the items are, what
+happens on removal, minimum age) and `roots()`. Providers never decide safety:
+`preview()` validates every candidate through `sentinel-safety` and applies age and
+protection checks (see SAFETY_MODEL.md, "Dry-run preview"). It reuses the scanner's
+batched enumeration (`sentinel_scanner::dirent`, now public, with last-write times), so
+sizes are allocated bytes and ages need no extra system calls.
+
+Built-in provider: `UserTemp` (`%LOCALAPPDATA%\Temp` from the known-folder API, not
+`%TEMP%`; risk Safe; 7-day minimum age). The crate has no executor; see the
+maintainer decisions in SAFETY_MODEL.md for how execution will work.
+
 ### Implemented: frontend (`src/`)
 
 React 19 + TypeScript (strict) + Vite + Tailwind 4, `lucide-react` icons. No component
