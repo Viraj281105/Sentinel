@@ -23,7 +23,7 @@ use std::time::Instant;
 
 use rayon::prelude::*;
 use sentinel_safety::{CanonicalPath, SafetyError, is_within};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::dirent::{RawEntry, read_dir};
@@ -38,7 +38,7 @@ fn is_cloud_tag(tag: u32) -> bool {
     tag & 0xFFFF_0FFF == 0x9000_001A
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum LinkKind {
@@ -49,7 +49,7 @@ pub enum LinkKind {
     Other,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum NotScannedReason {
@@ -60,7 +60,7 @@ pub enum NotScannedReason {
     OnlineOnly,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", tag = "state")]
 #[ts(export)]
 pub enum NodeStatus {
