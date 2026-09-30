@@ -422,3 +422,62 @@ fn lists_operations_and_reports_unreadable_manifests() {
     assert_eq!(ops[0].operation_id, "op-1");
     assert_eq!(problems.len(), 1);
 }
+
+/// The 8.3 short form of `path`, if the volume has short names enabled.
+fn short_path(path: &Path) -> Option<PathBuf> {
+    let out = Command::new("cmd")
+        .arg("/C")
+        .arg(format!("for %I in (\"{}\") do @echo %~sI", path.display()))
+        .output()
+        .ok()?;
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    let p = PathBuf::from(s);
+    (p.exists() && p != path).then_some(p)
+}
+
+#[test]
+fn a_quarantine_path_spelled_with_short_names_works() {
+    let f = fx();
+    let long = f.q.root().parent().unwrap().join("a long quarantine name");
+    fs::create_dir(&long).unwrap();
+    let Some(short) = short_path(&long) else {
+        eprintln!("SKIPPED: 8.3 names are disabled on this volume");
+        return;
+    };
+    let q = Quarantine::at(short.join("q"));
+    let mut log = Log::new();
+    let m = q
+        .quarantine(
+            &f.policy,
+            &f.provider,
+            &[f.temp.join("old.log")],
+            &ctx("op-1", now_ms()),
+            &mut sink(&mut log),
+        )
+        .unwrap();
+    assert_eq!(status(&m, 0), &EntryStatus::Quarantined);
+    assert!(long.join("q").join("op-1").join("0").exists());
+}
+
+#[test]
+fn refuses_a_quarantine_folder_whose_parent_is_a_link() {
+    let f = fx();
+    let real_parent = f.outside.join("real-parent");
+    fs::create_dir(&real_parent).unwrap();
+    let linked_parent = f.q.root().parent().unwrap().join("linked-parent");
+    junction(&linked_parent, &real_parent);
+    let q = Quarantine::at(linked_parent.join("q"));
+    let mut log = Log::new();
+    let r = q.quarantine(
+        &f.policy,
+        &f.provider,
+        &[f.temp.join("old.log")],
+        &ctx("op-1", now_ms()),
+        &mut sink(&mut log),
+    );
+    assert!(
+        matches!(r, Err(QuarantineError::UnsafeLocation(_))),
+        "{r:?}"
+    );
+    assert!(f.temp.join("old.log").exists());
+}

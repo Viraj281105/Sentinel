@@ -181,24 +181,29 @@ impl Quarantine {
         &self.root
     }
 
-    /// Create the folder if needed and confirm it is a real directory (not a link) in
-    /// canonical form. Returns its canonical path.
+    /// Create the folder if needed and confirm that it and its parent (both folders
+    /// Sentinel creates) are plain directories, not links. Returns the canonical path,
+    /// which is what every later operation uses.
+    ///
+    /// Comparing the configured path with its canonical form would be wrong: a path
+    /// spelled with 8.3 short names (e.g. `C:\Users\RUNNER~1\...`) differs from its
+    /// canonical form without involving any link.
     fn ensure_root(&self) -> Result<PathBuf, QuarantineError> {
         fs::create_dir_all(&self.root).map_err(io_err(&self.root))?;
-        let md = fs::symlink_metadata(&self.root).map_err(io_err(&self.root))?;
-        if !md.is_dir() || is_reparse(&md) {
-            return Err(QuarantineError::UnsafeLocation(format!(
-                "{} is not a plain folder",
-                self.root.display()
-            )));
+        for dir in [Some(self.root.as_path()), self.root.parent()]
+            .into_iter()
+            .flatten()
+        {
+            let md = fs::symlink_metadata(dir).map_err(io_err(dir))?;
+            if !md.is_dir() || is_reparse(&md) {
+                return Err(QuarantineError::UnsafeLocation(format!(
+                    "{} is not a plain folder",
+                    dir.display()
+                )));
+            }
         }
         let canon = CanonicalPath::resolve(&self.root)
             .map_err(|e| QuarantineError::UnsafeLocation(e.to_string()))?;
-        if !is_within(canon.as_path(), &self.root) || !is_within(&self.root, canon.as_path()) {
-            return Err(QuarantineError::UnsafeLocation(
-                "the folder is reached through a link".into(),
-            ));
-        }
         Ok(canon.as_path().to_path_buf())
     }
 
