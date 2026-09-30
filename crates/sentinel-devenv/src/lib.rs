@@ -10,6 +10,7 @@
 //! build tool, script or Git hook is run.
 
 mod git;
+mod jvm;
 mod model;
 mod parse;
 
@@ -22,6 +23,10 @@ use sentinel_scanner::dirent::{RawEntry, read_dir};
 use sentinel_scanner::scan::{ScanControl, ScanOptions, ScanTree, scan};
 
 pub use git::tracks_anything_under;
+pub use jvm::{
+    ArtifactCache, CachedArtifact, CachedVersion, GradleHome, GradleVersionUse, GroupSize,
+    JvmAnalysis, analyze_jvm_caches,
+};
 pub use model::{
     Artifact, ArtifactKind, Detection, Ecosystem, PackageManager, Project, Runtime,
     RuntimeRequirement,

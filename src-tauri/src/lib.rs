@@ -75,6 +75,7 @@ pub fn run() {
             commands::projects::project_searches,
             commands::projects::find_projects,
             commands::projects::remove_project_search,
+            commands::projects::jvm_caches,
             commands::quarantine::cleanup_run,
             commands::quarantine::project_cleanup_run,
             commands::cleanup::project_cleanup_preview,

@@ -123,7 +123,7 @@ Crates are created only when their first real feature lands (no empty scaffoldin
   `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only), `project_searches`,
   `find_projects`, `remove_project_search`, `audit_log`, `audit_verify`, `cleanup_run`,
   `quarantine_contents`, `quarantine_restore`, `project_cleanup_preview`,
-  `project_cleanup_run`. Each wraps a
+  `project_cleanup_run`, `jvm_caches`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -248,6 +248,21 @@ Nested projects (monorepo packages, workspace members) are separate projects. Fo
   `.git/HEAD`, `index`, `FETCH_HEAD`, `ORIG_HEAD`;
 - sizes from one scanner pass over the project folder (a parent project's total includes
   nested projects).
+
+### Implemented: Java build cache analysis (`sentinel_devenv::analyze_jvm_caches`)
+
+Read-only. Walks the Maven local repository (`~\.m2\repository`; a folder is an artifact
+version when it holds `artifact-version.pom|.jar`) and the Gradle home (`GRADLE_USER_HOME`
+or `~\.gradle`: wrapper distributions, per-version caches, `modules-2/files-2.1`, other
+shared caches). Reports sizes by group and artifact, artifacts with several versions,
+bytes outside each artifact's most recently downloaded version, and failed-download
+markers. It relates caches to the Java projects in saved searches only where that is
+certain: exact versions declared in `pom.xml` (properties resolved, parsed with
+`roxmltree`, no external entities) or as `group:artifact:version` literals in Gradle build
+files, and each project's wrapper version from `gradle-wrapper.properties`. Last use is
+unknowable (tools do not touch cached files; Windows does not track access), so dates
+are download dates and nothing is labelled unused. `settings.xml` is never read.
+Nothing here cleans anything.
 
 ### Implemented: `sentinel-quarantine`
 

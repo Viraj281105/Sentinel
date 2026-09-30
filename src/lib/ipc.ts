@@ -8,6 +8,7 @@ import type { CleanupRunResponse } from "../bindings/CleanupRunResponse";
 import type { DirListing } from "../bindings/DirListing";
 import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
+import type { JvmAnalysis } from "../bindings/JvmAnalysis";
 import type { LargeFileView } from "../bindings/LargeFileView";
 import type { ManifestEntry } from "../bindings/ManifestEntry";
 import type { PreviewResponse } from "../bindings/PreviewResponse";
@@ -35,6 +36,7 @@ export const ipc = {
   projectSearches: () => invoke<ProjectSearch[]>("project_searches"),
   findProjects: (root: string) => invoke<ProjectSearch>("find_projects", { root }),
   removeProjectSearch: (root: string) => invoke<boolean>("remove_project_search", { root }),
+  jvmCaches: () => invoke<JvmAnalysis>("jvm_caches"),
   projectCleanupPreview: (projects: string[]) => invoke<PreviewResponse>("project_cleanup_preview", { projects }),
   projectCleanupRun: (projects: string[], approved: string[]) =>
     invoke<CleanupRunResponse>("project_cleanup_run", { projects, approved }),

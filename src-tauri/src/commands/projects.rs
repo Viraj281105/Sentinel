@@ -3,7 +3,10 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use sentinel_devenv::{DetectOptions, Detection, detect};
+use sentinel_devenv::{
+    DetectOptions, Detection, Ecosystem, JvmAnalysis, analyze_jvm_caches, detect,
+};
+use sentinel_safety::{Known, known_folder};
 use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
@@ -79,6 +82,35 @@ pub(crate) async fn find_projects(
     tauri::async_runtime::spawn_blocking(move || search(&db, &root, DetectOptions::default()))
         .await
         .map_err(|e| CommandError::internal("searching for projects", e))?
+}
+
+/// Analyze this user's Maven repository and Gradle home against the Java projects in
+/// the saved searches. Read-only.
+#[tauri::command]
+pub(crate) async fn jvm_caches(state: State<'_, AppState>) -> Result<JvmAnalysis, CommandError> {
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let projects: Vec<PathBuf> = saved_searches(&db)?
+            .into_iter()
+            .flat_map(|s| s.detection.projects)
+            .filter(|p| p.ecosystems.contains(&Ecosystem::Java))
+            .map(|p| PathBuf::from(p.path))
+            .collect();
+        let profile = known_folder(Known::Profile);
+        let maven = profile.as_ref().map(|p| p.join(".m2").join("repository"));
+        // Gradle honors GRADLE_USER_HOME; this analysis is read-only, so it does too.
+        let gradle = std::env::var_os("GRADLE_USER_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| profile.as_ref().map(|p| p.join(".gradle")));
+        Ok(analyze_jvm_caches(
+            maven.as_deref(),
+            gradle.as_deref(),
+            &projects,
+        ))
+    })
+    .await
+    .map_err(|e| CommandError::internal("analyzing Java build caches", e))?
 }
 
 /// Forget a searched folder (nothing on disk is touched).

@@ -40,7 +40,7 @@ Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, 
 2. ✅ Projects page: folders chosen with the system folder picker, saved searches (store v4), rebuildable space, projects inactive for 90+ days, per-project runtimes and artifacts
 3. ✅ Package caches: npm, Yarn and pip cleanable (default locations only, named cache folders only, 1-day minimum age); pnpm store analysis-only. Real machine: Yarn 592 MB and pip 438 MB eligible
 4. ✅ Inactive project cleanup from the Projects page: re-inspected at preview and run time, 90-day inactivity over the whole project tree, artifact folders only, never anything Git tracks (own index parser). Real machine: 1.15 GB eligible in 3 projects; a committed venv correctly protected
-5. Maven/Gradle cache analysis
+5. ✅ Maven/Gradle cache analysis (read-only, Projects page): sizes, multiple versions, failed downloads, Gradle versions no searched project uses, exact declared versions. Real machine: Maven 101.5 MB, 452 versions, 50 artifacts with several versions (11.1 MB older)
 
 ## Phase 5 – Inventory & graph ⬜
 Software inventory (registry, winget, Store), runtime inventory, dependency graph.
@@ -68,8 +68,10 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Maven/Gradle cache analysis (read-only first: which artifacts and versions are held, and
-which projects still reference them), then Phase 5: software and runtime inventory.
+Phase 5, first milestone: runtime inventory. Detect installed Node.js, Python, Java/JDK,
+.NET, Rust, Go and Android SDK versions from their install locations and version managers
+(read-only; no runtime is executed unless its path is resolved and arguments are fixed),
+and show which searched projects require each version.
 
 ## Completed first milestone (historical)
 

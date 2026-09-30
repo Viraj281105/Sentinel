@@ -6,6 +6,7 @@ import type { Ecosystem } from "../bindings/Ecosystem";
 import type { PackageManager } from "../bindings/PackageManager";
 import type { Project } from "../bindings/Project";
 import type { ProjectSearch } from "../bindings/ProjectSearch";
+import { JvmCaches } from "../components/JvmCaches";
 import { ProjectCleanup } from "../components/ProjectCleanup";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
 import { formatAge, formatBytes, formatDateTime } from "../lib/format";
@@ -325,6 +326,7 @@ export function Projects() {
             </ul>
           </Panel>
         )}
+        <JvmCaches />
       </div>
     </>
   );
