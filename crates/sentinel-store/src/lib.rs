@@ -55,6 +55,7 @@ CREATE TABLE scan_nodes (
     total_bytes     INTEGER NOT NULL,
     own_bytes       INTEGER NOT NULL,
     file_count      INTEGER NOT NULL,
+    own_files       INTEGER NOT NULL,
     child_count     INTEGER NOT NULL,
     pruned_children INTEGER NOT NULL,
     pruned_bytes    INTEGER NOT NULL,
@@ -120,6 +121,8 @@ pub struct StoredNode {
     pub own_bytes: u64,
     /// Files in the whole subtree.
     pub file_count: u64,
+    /// Files directly in this folder.
+    pub own_files: u64,
     /// Subfolders at scan time, including pruned ones.
     pub child_count: u64,
     pub pruned_children: u64,
@@ -311,8 +314,8 @@ impl Store {
 
     fn node_where(&self, clause: &str, p: impl rusqlite::Params) -> Result<Vec<StoredNode>> {
         let sql = format!(
-            "SELECT node, parent, name, total_bytes, own_bytes, file_count, child_count,
-                    pruned_children, pruned_bytes, status
+            "SELECT node, parent, name, total_bytes, own_bytes, file_count, own_files,
+                    child_count, pruned_children, pruned_bytes, status
              FROM scan_nodes {clause}"
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -325,12 +328,13 @@ impl Store {
                     total_bytes: to_u(r.get(3)?),
                     own_bytes: to_u(r.get(4)?),
                     file_count: to_u(r.get(5)?),
-                    child_count: to_u(r.get(6)?),
-                    pruned_children: to_u(r.get(7)?),
-                    pruned_bytes: to_u(r.get(8)?),
+                    own_files: to_u(r.get(6)?),
+                    child_count: to_u(r.get(7)?),
+                    pruned_children: to_u(r.get(8)?),
+                    pruned_bytes: to_u(r.get(9)?),
                     status: NodeStatus::Complete,
                 },
-                r.get::<_, String>(9)?,
+                r.get::<_, String>(10)?,
             ))
         })?;
         rows.map(|row| {
@@ -494,14 +498,19 @@ fn insert_nodes(tx: &Transaction<'_>, scan: ScanId, tree: &ScanTree, min: u64) -
     }
     let mut stmt = tx.prepare(
         "INSERT INTO scan_nodes (scan_id, node, parent, name, total_bytes, own_bytes,
-             file_count, child_count, pruned_children, pruned_bytes, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             file_count, own_files, child_count, pruned_children, pruned_bytes, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
     )?;
     let mut stored = 0usize;
     for (i, node) in tree.nodes.iter().enumerate() {
         if !keep[i] {
             continue;
         }
+        let child_files: u64 = node
+            .children
+            .iter()
+            .map(|&c| tree.nodes[c as usize].file_count)
+            .sum();
         let status = serde_json::to_string(&node.status)
             .map_err(|e| StoreError::Corrupt(format!("node status: {e}")))?;
         stmt.execute(params![
@@ -512,6 +521,7 @@ fn insert_nodes(tx: &Transaction<'_>, scan: ScanId, tree: &ScanTree, min: u64) -
             to_i(node.total_bytes),
             to_i(node.own_bytes),
             to_i(node.file_count),
+            to_i(node.file_count.saturating_sub(child_files)),
             node.children.len() as i64,
             to_i(pruned[i].0),
             to_i(pruned[i].1),

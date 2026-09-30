@@ -88,6 +88,9 @@ fn roundtrips_scan_summary_tree_and_files() {
 
     let root = s.node(id, 0).unwrap().unwrap();
     assert_eq!(root.total_bytes, t.nodes[0].total_bytes);
+    // Each fixture node has file_count 1; the root's children hold 3 of its 1.
+    assert_eq!(root.own_files, 0);
+    assert_eq!(s.node(id, 2).unwrap().unwrap().own_files, 1);
     assert_eq!(root.child_count, 3);
 
     let names: Vec<_> = s
