@@ -19,7 +19,7 @@ follows the master directive, adjusted for what was discovered in Phase 0.
 
 ## Phase 2 – Storage intelligence 🚧
 1. ✅ Drive discovery (`sentinel-scanner`): Win32 volume enumeration, capacity, low-space flag; Storage page and Overview summary on real data; typed `CommandError`
-2. Cancellable parallel directory scanner with progress events and exclusion rules
+2. 🚧 Cancellable parallel directory scanner: ✅ engine (budgets, exclusions, link safety, largest files); UI wiring with progress events next
 3. SQLite cache and storage history
 4. Deterministic classifier (categories per the master directive; unknown stays unknown)
 5. Largest directories/files drill-down in the Storage page

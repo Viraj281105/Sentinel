@@ -56,6 +56,14 @@ cargo test --workspace   # also regenerates src/bindings; commit any changes
 npx tauri build --debug --no-bundle
 ```
 
+## Scanner benchmark
+
+Read-only; prints stats, the largest folders and files:
+
+```powershell
+cargo run --release -p sentinel-scanner --example scan -- C:\ 4
+```
+
 ## IPC types
 
 Rust types sent over IPC derive `ts_rs::TS` with `#[ts(export)]`. Running
