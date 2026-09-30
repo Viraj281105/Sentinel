@@ -4,11 +4,14 @@ import { Sidebar } from "./components/Sidebar";
 import { PAGES, type PageId } from "./lib/nav";
 import { Overview } from "./pages/Overview";
 import { Settings } from "./pages/Settings";
+import { Storage } from "./pages/Storage";
 
 function Page({ id }: { id: PageId }) {
   switch (id) {
     case "overview":
       return <Overview />;
+    case "storage":
+      return <Storage />;
     case "settings":
       return <Settings />;
     default: {

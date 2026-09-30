@@ -2659,6 +2659,7 @@ name = "sentinel-app"
 version = "0.1.0"
 dependencies = [
  "sentinel-safety",
+ "sentinel-scanner",
  "serde",
  "tauri",
  "tauri-build",
@@ -2675,6 +2676,18 @@ version = "0.1.0"
 dependencies = [
  "tempfile",
  "thiserror 2.0.21",
+ "windows",
+]
+
+[[package]]
+name = "sentinel-scanner"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
+ "ts-rs",
  "windows",
 ]
 

@@ -17,8 +17,12 @@ follows the master directive, adjusted for what was discovered in Phase 0.
 4. ✅ Tauri 2 shell + React/Vite/Tailwind, `ts-rs` IPC types, file logging; Overview and Settings show real protected-location data, other pages are honest placeholders
 5. ✅ CI on `windows-latest`: fmt, typecheck, lint, tests, build, clippy, binding freshness, Tauri build, npm/cargo audit
 
-## Phase 2 – Storage intelligence ⬜
-Drive discovery → cancellable parallel scanner → SQLite cache/history → classifier → Overview/Storage pages.
+## Phase 2 – Storage intelligence 🚧
+1. ✅ Drive discovery (`sentinel-scanner`): Win32 volume enumeration, capacity, low-space flag; Storage page and Overview summary on real data; typed `CommandError`
+2. Cancellable parallel directory scanner with progress events and exclusion rules
+3. SQLite cache and storage history
+4. Deterministic classifier (categories per the master directive; unknown stays unknown)
+5. Largest directories/files drill-down in the Storage page
 
 ## Phase 3 – Cleanup framework ⬜
 `CleanupProvider` trait, plan/dry-run, quarantine + restore, audit log, executor;
@@ -53,9 +57,9 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-`feat(storage): implement drive discovery` – enumerate fixed volumes via Win32
-(capacity, free space, filesystem, volume label), first fallible command with a typed
-IPC error, Overview/Storage wired to real drive data.
+`feat(scanner): add cancellable directory scanner` – bounded parallel walk that never
+follows reparse points, with depth/entry budgets, cancellation, progress events to the
+UI, and synthetic-fixture tests.
 
 ## Completed first milestone (historical)
 

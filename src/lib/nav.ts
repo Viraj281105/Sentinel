@@ -37,7 +37,7 @@ export interface PageDef {
 
 export const PAGES: PageDef[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, plannedPhase: null, summary: "Drive health, reclaimable space and warnings." },
-  { id: "storage", label: "Storage", icon: HardDrive, plannedPhase: 2, summary: "Drive usage, category breakdown and drill-down into large directories." },
+  { id: "storage", label: "Storage", icon: HardDrive, plannedPhase: null, summary: "Drive usage, category breakdown and drill-down into large directories." },
   { id: "cleanup", label: "Cleanup", icon: Brush, plannedPhase: 3, summary: "Policy-checked cleanup with dry-run, quarantine and restore." },
   { id: "software", label: "Software", icon: Package, plannedPhase: 5, summary: "Installed applications from the registry, winget and the Store, deduplicated." },
   { id: "dependencies", label: "Dependencies", icon: Layers, plannedPhase: 5, summary: "Runtimes, the projects that use them, and their disk footprint." },

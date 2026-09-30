@@ -1,6 +1,6 @@
 # Sentinel Architecture
 
-Status: **Phase 1 complete: `sentinel-safety`, the Tauri shell and the React frontend exist.** This document describes
+Status: **Phase 2 in progress: `sentinel-safety`, `sentinel-scanner` (drive discovery), the Tauri shell and the React frontend exist.** This document describes
 the discovered environment and the intended architecture. Sections marked *(planned)*
 are not implemented.
 
@@ -118,7 +118,7 @@ Crates are created only when their first real feature lands (no empty scaffoldin
 ### Implemented: `src-tauri` (`sentinel-app`)
 
 - Thin shell: `AppState` holds the log directory and a `Policy` built once at startup.
-- Commands (`src-tauri/src/commands/`): `app_info`, `protected_locations`. Each wraps a
+- Commands (`src-tauri/src/commands/`): `app_info`, `protected_locations`, `list_drives`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -129,8 +129,23 @@ Crates are created only when their first real feature lands (no empty scaffoldin
   `SENTINEL_LOG` (EnvFilter syntax, default `info`).
 - Webview hardening: strict CSP (no remote origins), `freezePrototype`, single
   capability file granting only `core:default`.
-- No structured command error type yet: current commands are infallible. It will be
-  introduced with the first fallible command (drive discovery) rather than speculatively.
+- Fallible commands return `CommandError { kind, message }` (`kind`: `system` for a failed
+  Windows API, `internal` for a Sentinel bug). `message` is user-facing; every error is
+  logged at `error` level where it is constructed. New kinds are added when a command needs
+  them, not in advance.
+- Blocking work (`list_drives`) runs on `spawn_blocking` so it never stalls the UI thread.
+
+### Implemented: `sentinel-scanner`
+
+Read-only storage observation. `drives::list_drives` enumerates drive letters with
+`GetLogicalDriveStringsW` and classifies each with `GetDriveTypeW`. Only local volumes
+(fixed, removable, RAM disk) are queried with `GetVolumeInformationW` and
+`GetDiskFreeSpaceExW`; network and optical drives are listed as `notQueried` because an
+offline share or empty tray can block for a long time. `SetThreadErrorMode` suppresses the
+"no disk in drive" dialog during queries. The system drive comes from
+`GetSystemWindowsDirectoryW` (not `%SystemDrive%`). Per-drive failures are data
+(`DriveStatus`), not command errors. `Space::low_space` (< 10 % free) is computed in Rust so
+the UI never re-implements policy.
 
 ### Implemented: frontend (`src/`)
 

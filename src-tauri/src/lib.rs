@@ -34,6 +34,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::system::app_info,
             commands::safety::protected_locations,
+            commands::storage::list_drives,
         ])
         .run(tauri::generate_context!());
 

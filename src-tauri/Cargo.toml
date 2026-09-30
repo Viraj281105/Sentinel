@@ -14,6 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 sentinel-safety = { path = "../crates/sentinel-safety" }
+sentinel-scanner = { path = "../crates/sentinel-scanner" }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

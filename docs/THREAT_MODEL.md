@@ -46,7 +46,7 @@ in `sentinel-cleanup`.
 | T13 | Tampered audit log or quarantine | Append-only log with hash chaining; quarantine manifest validated on restore; restore paths re-checked by policy |
 | T14 | Webview compromise (XSS) invoking commands | Strict CSP, no remote content, minimal Tauri capability allowlist, commands take opaque plan IDs not raw paths |
 | T15 | Command injection | No shell invocation with constructed strings; typed args only |
-| T16 | DoS via huge/infinite trees, hard-link loops | Depth/entry budgets, cancellation, reparse-point non-traversal |
+| T16 | DoS via huge/infinite trees, hard-link loops, or unresponsive volumes | Depth/entry budgets, cancellation, reparse-point non-traversal. *Implemented for drive discovery:* network/optical drives are never queried, OS error dialogs are suppressed, and discovery runs off the UI thread |
 | T17 | Supply-chain compromise of dependencies | `cargo-deny`/`cargo audit`, `npm audit`, lockfiles committed, minimal dependencies, CI checks |
 | T18 | Sensitive data in logs | Redaction in `tracing` layer; never log contents/tokens |
 
