@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Frontend typecheck
+        run: npm run typecheck
+
+      - name: Frontend lint
+        run: npm run lint
+
+      - name: Frontend tests
+        run: npm test
+
+      # The Tauri crate embeds dist/ at compile time, so build the frontend first.
+      - name: Frontend build
+        run: npm run build
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Generated IPC bindings are up to date
+        shell: bash
+        run: git diff --exit-code -- src/bindings
+
+      - name: Tauri build validation
+        run: npx tauri build --debug --no-bundle
+
+  audit:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: npm audit
+        run: npm audit --audit-level=high
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit
+        run: cargo audit
