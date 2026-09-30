@@ -13,6 +13,7 @@ mod git;
 mod jvm;
 mod model;
 mod parse;
+mod version;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -31,6 +32,7 @@ pub use model::{
     Artifact, ArtifactKind, Detection, Ecosystem, PackageManager, Project, Runtime,
     RuntimeRequirement,
 };
+pub use version::{Satisfies, parse_version, satisfies};
 
 /// Folder names never searched for projects: dependency stores, VCS data and caches.
 const SKIP_ANYWHERE: &[&str] = &[
