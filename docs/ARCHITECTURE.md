@@ -248,7 +248,7 @@ Database: `%LOCALAPPDATA%\dev.sentinel.app\sentinel.db` (WAL, foreign keys on,
 modified. If the file cannot be opened the app runs on an in-memory database and says
 so in Settings.
 
-Implemented (schema v2; v2 added `scan_categories`):
+Implemented (schema v3; v2 added `scan_categories`, v3 added `audit_log`):
 
 | Table | Contents |
 |---|---|
@@ -257,6 +257,12 @@ Implemented (schema v2; v2 added `scan_categories`):
 | `scan_largest_files` | per scan: ranked path and size |
 | `drive_snapshots` | root, time, total and free bytes (at most hourly, recorded when drives are listed) |
 | `scan_categories` | per scan: category key and bytes (absent for scans saved before v2) |
+| `audit_log` | append-only: seq, time, operation id, kind, provider, Windows user, items, bytes, policy, approval, outcome, errors, details (JSON), prev_hash, hash. Triggers reject UPDATE and DELETE |
+
+Audit chain: `hash = SHA-256(canonical JSON of the record, including seq and prev_hash)`,
+with 64 zeros before the first record. `Store::verify_audit` recomputes the chain and
+reports the first record that is missing, out of order, or changed. The user name comes
+from `GetUserNameW`, and operation ids are random UUIDs.
 
 Scan trees are stored down to 1 MiB: arena order is pre-order and subtree sizes never
 grow away from the root, so one forward pass keeps a connected tree; each kept parent
@@ -269,7 +275,7 @@ same root, giving each folder's previous size (`null` when it is new or was unde
 threshold).
 
 Planned tables: `projects`, `runtimes`, `project_runtime_edges`, `software`,
-`cleanup_operations`, `audit_log` (append-only), `quarantine_items`, `settings`,
+`cleanup_operations`, `quarantine_items`, `settings`,
 `plugins`.
 
 Stored data is metadata only: folder names, the paths of the 50 largest files, sizes,

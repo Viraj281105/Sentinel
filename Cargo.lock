@@ -2770,6 +2770,7 @@ dependencies = [
  "sentinel-scanner",
  "sentinel-store",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tempfile",
@@ -2778,6 +2779,8 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "ts-rs",
+ "uuid",
+ "windows",
 ]
 
 [[package]]
@@ -2835,10 +2838,13 @@ version = "0.1.0"
 dependencies = [
  "rusqlite",
  "sentinel-scanner",
+ "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
+ "ts-rs",
 ]
 
 [[package]]

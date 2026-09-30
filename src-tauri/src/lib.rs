@@ -4,6 +4,7 @@
 //! application state and exposes typed IPC commands. Business logic lives in the
 //! `sentinel-*` crates.
 
+mod audit;
 mod commands;
 mod db;
 mod logging;
@@ -19,6 +20,8 @@ pub(crate) struct AppState {
     pub log_dir: PathBuf,
     pub policy: Policy,
     pub db: db::Db,
+    /// Windows account name, recorded in audit entries.
+    pub user: String,
     pub scans: scans::ScanManager,
 }
 
@@ -37,6 +40,7 @@ pub fn run() {
                     std::sync::Arc::new(sentinel_classify::Classifier::for_system()),
                 ),
                 db,
+                user: audit::current_user(),
             });
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sentinel started");
             Ok(())
@@ -53,6 +57,8 @@ pub fn run() {
             commands::scan::scan_largest_files,
             commands::cleanup::cleanup_providers,
             commands::cleanup::cleanup_preview,
+            commands::activity::audit_log,
+            commands::activity::audit_verify,
         ])
         .run(tauri::generate_context!());
 

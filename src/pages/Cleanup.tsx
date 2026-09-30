@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { Decision } from "../bindings/Decision";
 import type { ItemKind } from "../bindings/ItemKind";
 import type { Preview } from "../bindings/Preview";
+import type { PreviewResponse } from "../bindings/PreviewResponse";
 import type { PreviewItem } from "../bindings/PreviewItem";
 import type { ProviderInfo } from "../bindings/ProviderInfo";
 import type { Risk } from "../bindings/Risk";
@@ -39,7 +40,8 @@ function decisionText(d: Decision): string {
 
 type Filter = "eligible" | "kept" | "all";
 
-function PreviewResult({ preview }: { preview: Preview }) {
+function PreviewResult({ response }: { response: PreviewResponse }) {
+  const preview: Preview = response.preview;
   const [filter, setFilter] = useState<Filter>("eligible");
   const eligible = preview.items.filter((i) => i.decision.state === "eligible");
   const kept = preview.items.filter((i) => i.decision.state !== "eligible");
@@ -54,7 +56,10 @@ function PreviewResult({ preview }: { preview: Preview }) {
   return (
     <div className="mt-4 space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Preview from {formatDateTime(preview.generatedAtMs)}. Nothing was changed.
+        Preview from {formatDateTime(preview.generatedAtMs)}. Nothing was changed.{" "}
+        {response.auditSeq !== null
+          ? `Recorded in Activity as entry ${response.auditSeq}.`
+          : "This preview could not be recorded in Activity (see the log file)."}
       </p>
       {preview.roots.map((r) =>
         r.state === "scanned" ? null : (
@@ -131,12 +136,12 @@ function PreviewResult({ preview }: { preview: Preview }) {
 
 function ProviderCard({ info }: { info: ProviderInfo }) {
   const [state, setState] = useState<
-    { s: "idle" } | { s: "loading" } | { s: "done"; preview: Preview } | { s: "error"; message: string }
+    { s: "idle" } | { s: "loading" } | { s: "done"; response: PreviewResponse } | { s: "error"; message: string }
   >({ s: "idle" });
   const run = async () => {
     setState({ s: "loading" });
     try {
-      setState({ s: "done", preview: await ipc.cleanupPreview(info.id) });
+      setState({ s: "done", response: await ipc.cleanupPreview(info.id) });
     } catch (err) {
       setState({ s: "error", message: describeError(err) });
     }
@@ -173,7 +178,7 @@ function ProviderCard({ info }: { info: ProviderInfo }) {
           <ErrorNote message={state.message} />
         </div>
       )}
-      {state.s === "done" && <PreviewResult preview={state.preview} />}
+      {state.s === "done" && <PreviewResult response={state.response} />}
     </Panel>
   );
 }

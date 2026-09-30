@@ -6,10 +6,16 @@
 //!
 //! Schema changes are append-only migrations tracked with `PRAGMA user_version`.
 
+mod audit;
+
 use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sentinel_scanner::scan::{LargeFile, NodeId, NodeStatus, ScanStats, ScanTree};
+
+pub use audit::{
+    Approval, AuditKind, AuditRecord, AuditVerification, GENESIS_HASH, NewAuditRecord, Outcome,
+};
 
 pub type ScanId = i64;
 
@@ -89,6 +95,30 @@ CREATE TABLE scan_categories (
     bytes    INTEGER NOT NULL,
     PRIMARY KEY (scan_id, category)
 ) WITHOUT ROWID;
+",
+    r"
+CREATE TABLE audit_log (
+    seq          INTEGER PRIMARY KEY,
+    at_ms        INTEGER NOT NULL,
+    operation_id TEXT    NOT NULL,
+    kind         TEXT    NOT NULL,
+    provider     TEXT,
+    user         TEXT    NOT NULL,
+    items        INTEGER NOT NULL,
+    bytes        INTEGER NOT NULL,
+    policy       TEXT    NOT NULL,
+    approval     TEXT    NOT NULL,
+    outcome      TEXT    NOT NULL,
+    errors       TEXT    NOT NULL,
+    details      TEXT    NOT NULL,
+    prev_hash    TEXT    NOT NULL,
+    hash         TEXT    NOT NULL
+);
+CREATE INDEX audit_log_operation ON audit_log(operation_id);
+CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'the audit log is append-only'); END;
+CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'the audit log is append-only'); END;
 ",
 ];
 

@@ -188,7 +188,7 @@ fn file_database_persists_across_reopen() {
             .unwrap()
     };
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 2);
+    assert_eq!(s.schema_version().unwrap(), 3);
     assert_eq!(s.latest_scan().unwrap().unwrap().id, id);
 }
 
@@ -280,11 +280,13 @@ fn upgrades_a_version_1_database_in_place() {
     // Turn it back into a schema-1 database: the table added by migration 2 is gone.
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
-        conn.execute_batch("DROP TABLE scan_categories; PRAGMA user_version = 1;")
-            .unwrap();
+        conn.execute_batch(
+            "DROP TABLE audit_log; DROP TABLE scan_categories; PRAGMA user_version = 1;",
+        )
+        .unwrap();
     }
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 2);
+    assert_eq!(s.schema_version().unwrap(), 3);
     assert_eq!(
         s.latest_scan().unwrap().unwrap().id,
         id,

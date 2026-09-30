@@ -44,7 +44,7 @@ function mockBackend(fail = false) {
     if (cmd === "cleanup_preview") {
       if (fail) throw { kind: "notFound", message: "There is no cleanup type called x." };
       expect(args).toEqual({ provider: "user-temp" });
-      return preview;
+      return { preview, operationId: "op-1", auditSeq: 42 };
     }
     throw new Error(`unexpected command ${cmd}`);
   });
@@ -66,6 +66,7 @@ describe("Cleanup page", () => {
     render(<Cleanup />);
     await userEvent.click(await screen.findByRole("button", { name: /^Preview$/ }));
     expect(await screen.findByText(/Nothing was changed/)).toBeInTheDocument();
+    expect(screen.getByText(/Recorded in Activity as entry 42/)).toBeInTheDocument();
     expect(screen.getAllByText("300 MB").length).toBeGreaterThan(0);
     expect(screen.getByText(/by moving 2 items \(12 files\) to quarantine/)).toBeInTheDocument();
     expect(screen.getByText("link only")).toBeInTheDocument();

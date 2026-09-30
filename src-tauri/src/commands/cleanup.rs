@@ -4,26 +4,58 @@ use std::sync::atomic::AtomicBool;
 
 use sentinel_cleanup::{CleanupProvider, Preview, PreviewLimits, ProviderInfo, preview, providers};
 use sentinel_safety::Policy;
+use serde::Serialize;
 use tauri::State;
+use ts_rs::TS;
 
 use super::error::{CommandError, ErrorKind};
-use crate::AppState;
 use crate::db::now_ms;
+use crate::{AppState, audit};
 
 #[tauri::command]
 pub(crate) fn cleanup_providers() -> Vec<ProviderInfo> {
     providers::builtin().iter().map(|p| p.info()).collect()
 }
 
-/// Show what the provider would remove, without removing anything.
+/// A preview plus where it was recorded in the audit log.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PreviewResponse {
+    pub preview: Preview,
+    pub operation_id: String,
+    /// Audit sequence number; `null` if the audit record could not be written.
+    #[ts(type = "number | null")]
+    pub audit_seq: Option<i64>,
+}
+
+/// Show what the provider would remove, without removing anything, and record the
+/// dry run in the audit log.
 #[tauri::command]
 pub(crate) async fn cleanup_preview(
     state: State<'_, AppState>,
     provider: String,
-) -> Result<Preview, CommandError> {
+) -> Result<PreviewResponse, CommandError> {
     let policy = state.policy.clone();
+    let db = state.db.clone();
+    let user = state.user.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        run_preview(&providers::builtin(), &policy, &provider)
+        let preview = run_preview(&providers::builtin(), &policy, &provider)?;
+        let operation_id = audit::new_operation_id();
+        let rec = audit::preview_record(&preview, &operation_id, &user, now_ms());
+        // A preview changes nothing, so a failed audit write does not hide it.
+        let audit_seq = match audit::record(&db, &rec) {
+            Ok(seq) => Some(seq),
+            Err(err) => {
+                tracing::error!(error = %err, operation = %operation_id, "could not record preview");
+                None
+            }
+        };
+        Ok(PreviewResponse {
+            preview,
+            operation_id,
+            audit_seq,
+        })
     })
     .await
     .map_err(|e| CommandError::internal("previewing cleanup", e))?

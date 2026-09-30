@@ -45,6 +45,6 @@ export const PAGES: PageDef[] = [
   { id: "environments", label: "Environments", icon: Boxes, plannedPhase: 5, summary: "Language runtimes and toolchains with active and stale versions." },
   { id: "containers", label: "Containers", icon: Container, plannedPhase: 6, summary: "Docker images, containers, volumes and WSL distributions (read-only)." },
   { id: "assistant", label: "AI Assistant", icon: Sparkles, plannedPhase: 8, summary: "Optional, advisory natural-language analysis. Off by default." },
-  { id: "activity", label: "Activity", icon: Activity, plannedPhase: 3, summary: "Audit log of every cleanup operation." },
+  { id: "activity", label: "Activity", icon: Activity, plannedPhase: null, summary: "Audit log of every cleanup operation." },
   { id: "settings", label: "Settings", icon: Settings, plannedPhase: null, summary: "Protected locations, logging and preferences." },
 ];

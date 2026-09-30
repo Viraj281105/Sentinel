@@ -1,8 +1,13 @@
 # Sentinel Safety Model
 
-Status: path validation (`sentinel-safety`) and dry-run previews (`sentinel-cleanup`) are
-implemented. No code that deletes, moves or modifies user files exists yet; the executor,
-quarantine and audit log are designed below but not built.
+Status: path validation (`sentinel-safety`), dry-run previews (`sentinel-cleanup`) and
+the audit log (`sentinel-store`) are implemented. No code that deletes, moves or modifies
+user files exists yet; the executor and quarantine are designed below but not built.
+
+**Audit rule for the executor:** the audit record for an operation is written before any
+file is touched, and if it cannot be written the operation does not run. A second record
+states the outcome. Previews change nothing, so a failed preview record is logged but the
+preview is still shown.
 
 ## Maintainer decisions (2026-09-30)
 

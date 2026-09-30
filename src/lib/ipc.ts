@@ -2,11 +2,13 @@
 // (src/bindings); never hand-write a type that crosses the IPC boundary.
 import { invoke } from "@tauri-apps/api/core";
 import type { AppInfo } from "../bindings/AppInfo";
+import type { AuditEntry } from "../bindings/AuditEntry";
+import type { AuditIntegrity } from "../bindings/AuditIntegrity";
 import type { DirListing } from "../bindings/DirListing";
 import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
 import type { LargeFileView } from "../bindings/LargeFileView";
-import type { Preview } from "../bindings/Preview";
+import type { PreviewResponse } from "../bindings/PreviewResponse";
 import type { ProtectedLocation } from "../bindings/ProtectedLocation";
 import type { ProviderInfo } from "../bindings/ProviderInfo";
 import type { ScanStatus } from "../bindings/ScanStatus";
@@ -23,7 +25,9 @@ export const ipc = {
   scanListing: (scanId: number, node: number) => invoke<DirListing>("scan_listing", { scanId, node }),
   scanLargestFiles: (scanId: number) => invoke<LargeFileView[]>("scan_largest_files", { scanId }),
   cleanupProviders: () => invoke<ProviderInfo[]>("cleanup_providers"),
-  cleanupPreview: (provider: string) => invoke<Preview>("cleanup_preview", { provider }),
+  cleanupPreview: (provider: string) => invoke<PreviewResponse>("cleanup_preview", { provider }),
+  auditLog: (limit: number, before: number | null = null) => invoke<AuditEntry[]>("audit_log", { limit, before }),
+  auditVerify: () => invoke<AuditIntegrity>("audit_verify"),
 };
 
 /** Turn whatever a rejected command produced into text a person can read. */
