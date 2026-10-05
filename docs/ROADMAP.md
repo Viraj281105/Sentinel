@@ -46,6 +46,7 @@ Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, 
 Software inventory (registry, winget, Store), runtime inventory, dependency graph.
 
 1. ✅ Runtime inventory (Projects page, read-only): Node.js, Python, Java, .NET, Rust, Go and Android SDK installs with sizes, matched to the runtime versions searched projects state. Real machine: 25 installs found (Node 24.19.0, Python 3.11.9, Rust 1.98.1, JDK 21.0.9, .NET 10.0.102, Android SDK 34-36)
+2. ✅ Software inventory from the uninstall registry (Software page, read-only): name, version, publisher, scope, install date, installer-reported size, with updates and system components left out. Real machine: 129 programs (475 entries skipped). Winget and Store apps still to do
 
 ## Phase 6 – Docker / WSL ⬜
 Read-only inspection first (this machine has Docker 29.x and two WSL2 distros). Volumes and WSL data are never auto-deleted.
@@ -70,8 +71,8 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 5, next: software inventory (uninstall registry keys, winget, Microsoft Store),
-read-only, with install sizes where the registry reports them.
+Phase 5, next: winget and Microsoft Store apps for the software inventory (read-only;
+needs a decision on asking a package manager), then the dependency graph.
 
 ## Completed first milestone (historical)
 

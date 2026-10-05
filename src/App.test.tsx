@@ -72,10 +72,10 @@ describe("App", () => {
   it("marks unimplemented pages honestly instead of showing data", async () => {
     mockBackend();
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: /software/i }));
-    expect(screen.getByRole("button", { name: /software/i })).toHaveAttribute("aria-current", "page");
+    await userEvent.click(screen.getByRole("button", { name: /containers/i }));
+    expect(screen.getByRole("button", { name: /containers/i })).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("Not implemented yet")).toBeInTheDocument();
-    expect(screen.getByText(/roadmap phase 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/roadmap phase 6/i)).toBeInTheDocument();
   });
 
   it("shows each drive with a usage meter, low-space badge and media state", async () => {

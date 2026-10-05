@@ -39,7 +39,7 @@ export const PAGES: PageDef[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, plannedPhase: null, summary: "Drive health, reclaimable space and warnings." },
   { id: "storage", label: "Storage", icon: HardDrive, plannedPhase: null, summary: "Drive usage, category breakdown and drill-down into large directories." },
   { id: "cleanup", label: "Cleanup", icon: Brush, plannedPhase: null, summary: "Policy-checked cleanup with dry-run, quarantine and restore." },
-  { id: "software", label: "Software", icon: Package, plannedPhase: 5, summary: "Installed applications from the registry, winget and the Store, deduplicated." },
+  { id: "software", label: "Software", icon: Package, plannedPhase: null, summary: "Installed applications from the Windows uninstall registry (winget and Store apps are not included yet)." },
   { id: "dependencies", label: "Dependencies", icon: Layers, plannedPhase: 5, summary: "Runtimes, the projects that use them, and their disk footprint." },
   { id: "projects", label: "Projects", icon: FolderGit2, plannedPhase: null, summary: "Detected development projects, their artifacts and environments." },
   { id: "environments", label: "Environments", icon: Boxes, plannedPhase: 5, summary: "Language runtimes and toolchains with active and stale versions." },

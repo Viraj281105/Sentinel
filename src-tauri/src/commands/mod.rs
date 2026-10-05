@@ -12,5 +12,6 @@ pub(crate) mod projects;
 pub(crate) mod quarantine;
 pub(crate) mod safety;
 pub(crate) mod scan;
+pub(crate) mod software;
 pub(crate) mod storage;
 pub(crate) mod system;

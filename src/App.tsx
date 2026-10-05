@@ -7,6 +7,7 @@ import { Cleanup } from "./pages/Cleanup";
 import { Overview } from "./pages/Overview";
 import { Projects } from "./pages/Projects";
 import { Settings } from "./pages/Settings";
+import { Software } from "./pages/Software";
 import { Storage } from "./pages/Storage";
 
 function Page({ id }: { id: PageId }) {
@@ -21,6 +22,8 @@ function Page({ id }: { id: PageId }) {
       return <Activity />;
     case "projects":
       return <Projects />;
+    case "software":
+      return <Software />;
     case "settings":
       return <Settings />;
     default: {

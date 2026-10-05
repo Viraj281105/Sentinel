@@ -96,6 +96,7 @@ Sentinel/
     sentinel-scanner/         # drive discovery, incremental scanner, classifier
     sentinel-cleanup/         # providers, planner, quarantine, executor, audit
     sentinel-devenv/          # project detection, runtimes, package managers, dep graph
+    sentinel-inventory/       # installed software (uninstall registry)
     sentinel-store/           # SQLite schema + migrations
     sentinel-ai/              # provider trait, schema validation, redaction
   src-tauri/                  # Tauri app: commands, events, state wiring only
@@ -123,7 +124,7 @@ Crates are created only when their first real feature lands (no empty scaffoldin
   `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only), `project_searches`,
   `find_projects`, `remove_project_search`, `audit_log`, `audit_verify`, `cleanup_run`,
   `quarantine_contents`, `quarantine_restore`, `project_cleanup_preview`,
-  `project_cleanup_run`, `jvm_caches`, `runtime_inventory`. Each wraps a
+  `project_cleanup_run`, `jvm_caches`, `runtime_inventory`, `software_inventory`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -277,6 +278,18 @@ single exception is a standalone Node.js install, which has no version file: its
 window. Installs are matched to saved-search projects through `satisfies()`: a
 requirement that is not understood (`lts/*`) is neither met nor unmet. Scoop, winget-only
 layouts and Windows Store Python are not searched. Nothing here uninstalls anything.
+
+### Implemented: software inventory (`sentinel_inventory::inventory_software`)
+
+Read-only. Reads display metadata (name, version, publisher, install date, install
+location, reported size, MSI flag) from the three uninstall registry locations (machine
+64-bit, machine 32-bit view, current user) through `winreg`, with an allow-list of value
+names: uninstall and modify command lines are never read. The rules (skip nameless
+entries, `SystemComponent`, updates and patches; merge the same name, version and
+publisher across views, keeping the 64-bit entry) live in the pure `interpret()`, which is
+unit-tested without a registry. Sizes are what installers reported (many report none), so
+the total is labelled as an understatement. Winget and Microsoft Store apps need a
+package manager to be asked and are not included yet. Nothing here uninstalls anything.
 
 ### Implemented: `sentinel-quarantine`
 

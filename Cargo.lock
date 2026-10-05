@@ -2801,6 +2801,7 @@ dependencies = [
  "sentinel-classify",
  "sentinel-cleanup",
  "sentinel-devenv",
+ "sentinel-inventory",
  "sentinel-quarantine",
  "sentinel-safety",
  "sentinel-scanner",
@@ -2859,6 +2860,16 @@ dependencies = [
  "toml 0.9.12+spec-1.1.0",
  "tracing",
  "ts-rs",
+]
+
+[[package]]
+name = "sentinel-inventory"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tracing",
+ "ts-rs",
+ "winreg",
 ]
 
 [[package]]
