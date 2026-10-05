@@ -18,6 +18,7 @@ sentinel-devenv = { path = "../crates/sentinel-devenv" }
 sentinel-inventory = { path = "../crates/sentinel-inventory" }
 sentinel-quarantine = { path = "../crates/sentinel-quarantine" }
 sentinel-cleanup = { path = "../crates/sentinel-cleanup" }
+sentinel-containers = { path = "../crates/sentinel-containers" }
 sentinel-safety = { path = "../crates/sentinel-safety" }
 sentinel-scanner = { path = "../crates/sentinel-scanner" }
 sentinel-store = { path = "../crates/sentinel-store" }

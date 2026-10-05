@@ -7,6 +7,7 @@
 
 pub(crate) mod activity;
 pub(crate) mod cleanup;
+pub(crate) mod containers;
 pub(crate) mod error;
 pub(crate) mod projects;
 pub(crate) mod quarantine;

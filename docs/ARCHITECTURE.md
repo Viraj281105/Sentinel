@@ -97,6 +97,7 @@ Sentinel/
     sentinel-cleanup/         # providers, planner, quarantine, executor, audit
     sentinel-devenv/          # project detection, runtimes, package managers, dep graph
     sentinel-inventory/       # installed software (uninstall registry)
+    sentinel-containers/      # Docker (CLI, read-only) and WSL (registry) inspection
     sentinel-store/           # SQLite schema + migrations
     sentinel-ai/              # provider trait, schema validation, redaction
   src-tauri/                  # Tauri app: commands, events, state wiring only
@@ -124,7 +125,7 @@ Crates are created only when their first real feature lands (no empty scaffoldin
   `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only), `project_searches`,
   `find_projects`, `remove_project_search`, `audit_log`, `audit_verify`, `cleanup_run`,
   `quarantine_contents`, `quarantine_restore`, `project_cleanup_preview`,
-  `project_cleanup_run`, `jvm_caches`, `runtime_inventory`, `software_inventory`, `dependency_graph`. Each wraps a
+  `project_cleanup_run`, `jvm_caches`, `runtime_inventory`, `software_inventory`, `dependency_graph`, `docker_overview`, `wsl_distros`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -291,6 +292,23 @@ Each install gets a footprint: its size plus the rebuildable artifacts of the pr
 that depend on it. Installs of Node.js, Python, Rust or Go that no stated requirement
 needs are flagged, with the caveat that projects stating no version may still use them;
 Java, .NET and Android installs are never judged because their requirements are not parsed.
+
+### Implemented: Docker and WSL inspection (`sentinel-containers`)
+
+Read-only. Docker is asked through `docker.exe` with a closed set of commands
+(`version`, `ps -a`, `images`, `volume ls`, `system df`, `system df -v`), each with fixed
+arguments, no shell, no console window, a 20 s limit (60 s for the volume-sizing form) and
+an 8 MB output cap. The executable is resolved to an absolute path (Docker Desktop's
+folder, then absolute `PATH` entries), so a `docker.exe` in the current folder is never
+run. Sentinel never starts Docker Desktop: a stopped engine is reported as such. Output
+is `{{json .}}`; unknown fields are ignored and unreadable lines become warnings. Sizes
+are Docker's rounded decimal figures and are labelled approximate. Images carry Docker's
+own container count; volumes carry link counts and the Compose project from their labels.
+WSL distributions come from `HKCU\...\Lxss` (name, version, default, base path) and each
+disk is its `.vhdx` file size (Docker Desktop's data disk is in the `disk` folder beside
+its `main` folder); `wsl.exe` is not run, so running state is not shown. Nothing here
+prunes, stops, removes, compacts or moves anything, and volumes and WSL disks are never
+offered for deletion.
 
 ### Implemented: software inventory (`sentinel_inventory::inventory_software`)
 

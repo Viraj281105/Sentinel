@@ -2800,6 +2800,7 @@ version = "0.1.0"
 dependencies = [
  "sentinel-classify",
  "sentinel-cleanup",
+ "sentinel-containers",
  "sentinel-devenv",
  "sentinel-inventory",
  "sentinel-quarantine",
@@ -2845,6 +2846,18 @@ dependencies = [
  "thiserror 2.0.21",
  "tracing",
  "ts-rs",
+]
+
+[[package]]
+name = "sentinel-containers"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "ts-rs",
+ "winreg",
 ]
 
 [[package]]

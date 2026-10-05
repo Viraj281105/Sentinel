@@ -7,6 +7,7 @@ import type { AuditIntegrity } from "../bindings/AuditIntegrity";
 import type { CleanupRunResponse } from "../bindings/CleanupRunResponse";
 import type { DirListing } from "../bindings/DirListing";
 import type { DependencyGraph } from "../bindings/DependencyGraph";
+import type { DockerOverview } from "../bindings/DockerOverview";
 import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
 import type { JvmAnalysis } from "../bindings/JvmAnalysis";
@@ -19,6 +20,7 @@ import type { ProviderInfo } from "../bindings/ProviderInfo";
 import type { QuarantineContents } from "../bindings/QuarantineContents";
 import type { RuntimeInventory } from "../bindings/RuntimeInventory";
 import type { SoftwareInventory } from "../bindings/SoftwareInventory";
+import type { WslInventory } from "../bindings/WslInventory";
 import type { ScanStatus } from "../bindings/ScanStatus";
 
 // Fallible commands reject with a `CommandError` ({ kind, message }).
@@ -40,6 +42,8 @@ export const ipc = {
   findProjects: (root: string) => invoke<ProjectSearch>("find_projects", { root }),
   removeProjectSearch: (root: string) => invoke<boolean>("remove_project_search", { root }),
   jvmCaches: () => invoke<JvmAnalysis>("jvm_caches"),
+  dockerOverview: () => invoke<DockerOverview>("docker_overview"),
+  wslDistros: () => invoke<WslInventory>("wsl_distros"),
   softwareInventory: () => invoke<SoftwareInventory>("software_inventory"),
   dependencyGraph: () => invoke<DependencyGraph>("dependency_graph"),
   runtimeInventory: () => invoke<RuntimeInventory>("runtime_inventory"),

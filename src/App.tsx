@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar";
 import { PAGES, type PageId } from "./lib/nav";
 import { Activity } from "./pages/Activity";
 import { Cleanup } from "./pages/Cleanup";
+import { Containers } from "./pages/Containers";
 import { Dependencies } from "./pages/Dependencies";
 import { Overview } from "./pages/Overview";
 import { Projects } from "./pages/Projects";
@@ -23,6 +24,8 @@ function Page({ id }: { id: PageId }) {
       return <Activity />;
     case "projects":
       return <Projects />;
+    case "containers":
+      return <Containers />;
     case "dependencies":
       return <Dependencies />;
     case "software":

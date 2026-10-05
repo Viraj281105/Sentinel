@@ -1,0 +1,37 @@
+//! Developer tool: inspect Docker (through its CLI) and WSL. Read-only.
+//!
+//! `cargo run -p sentinel-containers --example inspect`
+
+fn main() {
+    let d = sentinel_containers::inspect_docker();
+    println!(
+        "docker: {:?} cli={:?} version={:?}",
+        d.state, d.cli_path, d.server_version
+    );
+    for u in &d.usage {
+        println!("  {u:?}");
+    }
+    println!(
+        "  {} containers, {} images, {} volumes, warnings {:?}",
+        d.containers.len(),
+        d.images.len(),
+        d.volumes.len(),
+        d.warnings
+    );
+    let w = sentinel_containers::inspect_wsl();
+    for x in &w.distros {
+        println!(
+            "wsl: {} v{:?} default={} docker={} {} bytes in {} disks",
+            x.name,
+            x.version,
+            x.is_default,
+            x.docker_desktop,
+            x.disk_bytes,
+            x.disks.len()
+        );
+    }
+    println!(
+        "wsl total {} bytes, warnings {:?}",
+        w.total_disk_bytes, w.warnings
+    );
+}

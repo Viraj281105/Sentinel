@@ -79,6 +79,8 @@ pub fn run() {
             commands::projects::runtime_inventory,
             commands::projects::dependency_graph,
             commands::software::software_inventory,
+            commands::containers::docker_overview,
+            commands::containers::wsl_distros,
             commands::quarantine::cleanup_run,
             commands::quarantine::project_cleanup_run,
             commands::cleanup::project_cleanup_preview,
