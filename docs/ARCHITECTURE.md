@@ -310,6 +310,18 @@ its `main` folder); `wsl.exe` is not run, so running state is not shown. Nothing
 prunes, stops, removes, compacts or moves anything, and volumes and WSL disks are never
 offered for deletion.
 
+**Prune preview** (`build_preview`, pure, computed from what was already read): for five
+categories (stopped containers, untagged images, tagged images no container uses, build
+cache not in use, volumes no container uses) it lists what Docker's own prune command would
+remove, a risk level, the command text *for a person to run themselves*, and a caution.
+It keeps two figures apart: the sum of the listed items (an overstatement, since images
+share layers) and Docker's own `system df` reclaimable estimate, which is what the page
+leads with (on the real engine the build cache lists 5.6 GB of items but Docker's estimate
+is 0 B because every entry is shared with an image). Categories overlap, so there is no
+grand total. Sentinel does not run any prune command and the UI has no button for one:
+pruned data is deleted outright and cannot go through quarantine. Volumes are marked high
+risk and never recommended.
+
 ### Implemented: software inventory (`sentinel_inventory::inventory_software`)
 
 Read-only. Reads display metadata (name, version, publisher, install date, install

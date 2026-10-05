@@ -35,7 +35,32 @@ const running: DockerOverview = {
     { id: "b", repository: "<none>", tag: "<none>", sizeBytes: 1 * GB, created: "2 months ago", dangling: true, containers: 0 },
   ],
   volumes: [{ name: "shop_pgdata", driver: "local", sizeBytes: 51e6, links: 0, composeProject: "shop" }],
+  buildCache: [],
   warnings: [],
+  prunePreview: {
+    categories: [
+      {
+        id: "build-cache",
+        title: "Build cache not in use",
+        command: "docker builder prune",
+        risk: "low",
+        items: [{ label: "pulled from docker.io/library/python", detail: "regular · last used 8 days ago · shared with an image", bytes: 117e6 }],
+        itemBytes: 5.6 * GB,
+        dockerReclaimableBytes: 0,
+        caution: "1 of these entries are shared with images, so removing them frees little.",
+      },
+      {
+        id: "volumes",
+        title: "Volumes no container uses",
+        command: "docker volume prune",
+        risk: "high",
+        items: [],
+        itemBytes: null,
+        dockerReclaimableBytes: 51e6,
+        caution: "Sentinel never recommends this.",
+      },
+    ],
+  },
 };
 
 function backend(docker: DockerOverview) {
@@ -61,13 +86,22 @@ describe("Containers page", () => {
     expect(screen.getByText(/Compose: shop · no container uses it/)).toBeInTheDocument();
     expect(screen.getByText(/Docker counts ≈ .* as reclaimable/)).toBeInTheDocument();
 
+    // Preview: Docker's own figure leads, the command is shown but never run.
+    expect(screen.getByText(/only a preview built from what Docker reported/)).toBeInTheDocument();
+    expect(screen.getByText(/Sentinel does not run these commands/)).toBeInTheDocument();
+    expect(screen.getByText(/Docker's own estimate of what this frees: ≈ 0 B/)).toBeInTheDocument();
+    expect(screen.getByText(/listed sizes add up to ≈ 5\.60 GB/)).toBeInTheDocument();
+    expect(screen.getByText("docker builder prune")).toBeInTheDocument();
+    expect(screen.getByText(/High risk/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /prune|remove|delete|clean/i })).not.toBeInTheDocument();
+
     expect(screen.getByText("docker-desktop")).toBeInTheDocument();
     expect(screen.getByText("Ubuntu (default)")).toBeInTheDocument();
     expect(screen.getByText(/never offers to delete or shrink/)).toBeInTheDocument();
   });
 
   it("says plainly when Docker is not running and does not offer to start it", async () => {
-    backend({ ...running, state: "notRunning", usage: [], images: [], containers: [], volumes: [] });
+    backend({ ...running, state: "notRunning", usage: [], images: [], containers: [], volumes: [], prunePreview: null });
     render(<Containers />);
     await userEvent.click(screen.getByRole("button", { name: /Inspect/ }));
     expect(await screen.findByText(/engine is not running/)).toBeInTheDocument();

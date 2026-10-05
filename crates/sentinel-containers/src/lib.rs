@@ -13,11 +13,14 @@
 //! Volumes and WSL disks hold user data and are never offered for deletion.
 
 mod docker;
+mod prune;
 mod wsl;
 
 pub use docker::{
-    DockerContainer, DockerImage, DockerOverview, DockerState, DockerVolume, UsageRow, parse_size,
+    BuildCacheEntry, DockerContainer, DockerImage, DockerOverview, DockerState, DockerVolume,
+    UsageRow, parse_size,
 };
+pub use prune::{PruneCategory, PruneItem, PrunePreview, PruneRisk, build_preview};
 pub use wsl::{WslDisk, WslDistro, WslInventory};
 
 #[cfg(windows)]

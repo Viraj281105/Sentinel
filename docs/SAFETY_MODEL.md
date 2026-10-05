@@ -243,3 +243,12 @@ policy engine recomputes risk and may only ever *raise* it relative to AI's clai
 Destructive tests run only against temp fixtures created by the test itself. Any code
 path that deletes is compiled with a test hook to root all operations under a
 sandbox directory. Inspection of the real machine is read-only.
+
+## Docker prune is never run
+
+The Containers page previews what Docker's prune commands would remove, but Sentinel
+never executes `docker ... prune` (or any Docker command that changes state). Docker
+deletes outright; there is no quarantine, restore or audit trail Sentinel could provide
+for it, so offering it would break the rule that every deletion is reversible and
+audited. Adding it would need a separate maintainer decision and a design for what
+"reversible" means for images, build cache and volumes.

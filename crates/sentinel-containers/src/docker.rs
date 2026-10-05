@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
+use crate::prune::{PrunePreview, build_preview};
+
 /// Output beyond this is cut off and the command treated as failed.
 const MAX_OUTPUT: usize = 8 * 1024 * 1024;
 
@@ -86,6 +88,24 @@ pub struct DockerVolume {
     pub compose_project: Option<String>,
 }
 
+/// One build cache record from `docker system df -v`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct BuildCacheEntry {
+    pub id: String,
+    pub cache_type: String,
+    pub description: String,
+    /// Approximate (rounded by Docker).
+    #[ts(type = "number | null")]
+    pub size_bytes: Option<u64>,
+    pub in_use: bool,
+    /// Shares its data with an image, so removing it frees little.
+    pub shared: bool,
+    /// e.g. "8 days ago".
+    pub last_used: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -97,7 +117,11 @@ pub struct DockerOverview {
     pub containers: Vec<DockerContainer>,
     pub images: Vec<DockerImage>,
     pub volumes: Vec<DockerVolume>,
+    pub build_cache: Vec<BuildCacheEntry>,
     pub warnings: Vec<String>,
+    /// What Docker's prune commands would remove. A preview only: nothing is run.
+    /// `null` unless the engine is running.
+    pub prune_preview: Option<PrunePreview>,
 }
 
 impl DockerOverview {
@@ -110,7 +134,9 @@ impl DockerOverview {
             containers: Vec::new(),
             images: Vec::new(),
             volumes: Vec::new(),
+            build_cache: Vec::new(),
             warnings: Vec::new(),
+            prune_preview: None,
         }
     }
 }
@@ -369,26 +395,53 @@ fn parse_images(out: &str, containers: &[DockerContainer]) -> (Vec<DockerImage>,
     (rows, bad)
 }
 
-/// Volume sizes and link counts from `system df -v`, which prints one object holding a
-/// `Volumes` array. Unrecognized shapes give an empty list, never an error.
-fn parse_volume_usage(out: &str) -> Vec<(String, Option<u64>, Option<u64>)> {
+/// What `system df -v` adds: volume sizes and link counts, and build cache records. It
+/// prints one object; an unrecognized shape gives empty lists, never an error.
+#[derive(Default)]
+struct Verbose {
+    volumes: Vec<(String, Option<u64>, Option<u64>)>,
+    build_cache: Vec<BuildCacheEntry>,
+}
+
+fn flag(v: &Value, key: &str) -> bool {
+    matches!(v.get(key), Some(Value::String(s)) if s.eq_ignore_ascii_case("true"))
+        || matches!(v.get(key), Some(Value::Bool(true)))
+}
+
+fn parse_verbose(out: &str) -> Verbose {
     let Ok(v) = serde_json::from_str::<Value>(out.trim()) else {
-        return Vec::new();
+        return Verbose::default();
     };
-    v.get("Volumes")
-        .and_then(Value::as_array)
-        .map(|a| {
-            a.iter()
-                .map(|x| {
-                    (
-                        text(x, "Name"),
-                        parse_size(&text(x, "Size")),
-                        number(x, "Links"),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    let list = |key: &str| {
+        v.get(key)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+    Verbose {
+        volumes: list("Volumes")
+            .iter()
+            .map(|x| {
+                (
+                    text(x, "Name"),
+                    parse_size(&text(x, "Size")),
+                    number(x, "Links"),
+                )
+            })
+            .collect(),
+        build_cache: list("BuildCache")
+            .iter()
+            .map(|x| BuildCacheEntry {
+                id: text(x, "ID"),
+                cache_type: text(x, "CacheType"),
+                description: text(x, "Description"),
+                size_bytes: parse_size(&text(x, "Size")),
+                in_use: flag(x, "InUse"),
+                shared: flag(x, "Shared"),
+                last_used: text(x, "LastUsedSince"),
+            })
+            .collect(),
+    }
 }
 
 pub(crate) fn overview_with(runner: &dyn Runner, cli_path: Option<String>) -> DockerOverview {
@@ -453,16 +506,21 @@ pub(crate) fn overview_with(runner: &dyn Runner, cli_path: Option<String>) -> Do
             .collect();
         note_bad(bad, "volume", &mut o.warnings);
     }
-    if !o.volumes.is_empty() {
-        // Sizes need the slower verbose form; without it volumes are listed unsized.
-        if let Some(s) = ask(Cmd::UsageVerbose, "volume sizes", &mut o.warnings) {
-            for (name, size, links) in parse_volume_usage(&s) {
-                if let Some(v) = o.volumes.iter_mut().find(|v| v.name == name) {
-                    v.size_bytes = size;
-                    v.links = links;
-                }
+    // Volume sizes and build cache records need the slower verbose form; without it
+    // volumes are listed unsized and the build cache is not itemized.
+    if let Some(s) = ask(
+        Cmd::UsageVerbose,
+        "volume sizes and build cache",
+        &mut o.warnings,
+    ) {
+        let verbose = parse_verbose(&s);
+        for (name, size, links) in verbose.volumes {
+            if let Some(v) = o.volumes.iter_mut().find(|v| v.name == name) {
+                v.size_bytes = size;
+                v.links = links;
             }
         }
+        o.build_cache = verbose.build_cache;
     }
     o.images.sort_by(|a, b| {
         b.size_bytes
@@ -474,6 +532,12 @@ pub(crate) fn overview_with(runner: &dyn Runner, cli_path: Option<String>) -> Do
             .cmp(&a.size_bytes)
             .then_with(|| a.name.cmp(&b.name))
     });
+    o.build_cache.sort_by(|a, b| {
+        b.size_bytes
+            .cmp(&a.size_bytes)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    o.prune_preview = Some(build_preview(&o));
     o
 }
 
@@ -608,7 +672,7 @@ mod tests {
             r#"{"Driver":"local","Name":"scratch","Scope":"local"}"#,
             "\n"
         );
-        let dfv = r#"{"Images":[],"Volumes":[{"Name":"pgdata","Links":"1","Size":"3.4GB"},{"Name":"scratch","Links":"0","Size":"12kB"}]}"#;
+        let dfv = r#"{"Images":[],"Volumes":[{"Name":"pgdata","Links":"1","Size":"3.4GB"},{"Name":"scratch","Links":"0","Size":"12kB"}],"BuildCache":[{"ID":"b1","CacheType":"regular","Description":"pulled from docker.io/library/python","Size":"117MB","InUse":"false","Shared":"true","LastUsedSince":"8 days ago"},{"ID":"b2","CacheType":"exec.cachemount","Size":"5MB","InUse":"true","Shared":"false"}]}"#;
         let f = Fake(HashMap::from([
             ("version", Ok("29.1.0\n".to_owned())),
             ("ps", Ok(ps.to_owned())),
@@ -638,6 +702,49 @@ mod tests {
         assert_eq!(o.volumes[0].compose_project.as_deref(), Some("shop"));
         assert_eq!(o.volumes[1].compose_project, None);
         assert_eq!(o.volumes[1].links, Some(0));
+
+        assert_eq!(o.build_cache.len(), 2);
+        assert_eq!(o.build_cache[0].id, "b1", "largest first");
+        assert!(!o.build_cache[0].in_use && o.build_cache[0].shared);
+        assert!(o.build_cache[1].in_use);
+        assert_eq!(o.build_cache[0].last_used, "8 days ago");
+
+        let preview = o.prune_preview.as_ref().unwrap();
+        let unused = preview
+            .categories
+            .iter()
+            .find(|c| c.id == "unused-images")
+            .unwrap();
+        assert!(
+            unused.items.is_empty(),
+            "both tagged images have containers"
+        );
+        let dangling = preview
+            .categories
+            .iter()
+            .find(|c| c.id == "dangling-images")
+            .unwrap();
+        assert_eq!(
+            dangling.items.len(),
+            1,
+            "the untagged image with no container"
+        );
+        let cache = preview
+            .categories
+            .iter()
+            .find(|c| c.id == "build-cache")
+            .unwrap();
+        assert_eq!(cache.items.len(), 1, "in-use cache excluded");
+        let vols = preview
+            .categories
+            .iter()
+            .find(|c| c.id == "volumes")
+            .unwrap();
+        assert_eq!(
+            vols.items.len(),
+            1,
+            "scratch has no links; pgdata is in use"
+        );
 
         assert_eq!(o.warnings.len(), 1);
         assert!(o.warnings[0].contains("1 container lines were not understood"));
@@ -680,8 +787,16 @@ mod tests {
     }
 
     #[test]
-    fn unrecognized_volume_usage_leaves_volumes_unsized() {
-        assert!(parse_volume_usage("[1,2,3]").is_empty());
-        assert!(parse_volume_usage("garbage").is_empty());
+    fn unrecognized_verbose_usage_gives_nothing() {
+        for bad in ["[1,2,3]", "garbage", "{}"] {
+            let v = parse_verbose(bad);
+            assert!(v.volumes.is_empty() && v.build_cache.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_stopped_engine_has_no_preview() {
+        let f = Fake(HashMap::from([("version", Err(RunError::NotRunning))]));
+        assert!(overview_with(&f, None).prune_preview.is_none());
     }
 }

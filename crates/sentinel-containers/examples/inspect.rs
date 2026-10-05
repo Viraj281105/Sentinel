@@ -18,6 +18,19 @@ fn main() {
         d.volumes.len(),
         d.warnings
     );
+    if let Some(p) = &d.prune_preview {
+        for c in &p.categories {
+            println!(
+                "PREVIEW {:<32} {:?} items={} item_bytes={:?} docker_reclaimable={:?}  [{}]",
+                c.title,
+                c.risk,
+                c.items.len(),
+                c.item_bytes,
+                c.docker_reclaimable_bytes,
+                c.command
+            );
+        }
+    }
     let w = sentinel_containers::inspect_wsl();
     for x in &w.distros {
         println!(

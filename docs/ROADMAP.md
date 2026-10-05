@@ -49,10 +49,11 @@ Software inventory (registry, winget, Store), runtime inventory, dependency grap
 2. ✅ Software inventory from the uninstall registry (Software page, read-only): name, version, publisher, scope, install date, installer-reported size, with updates and system components left out. Real machine: 129 programs (475 entries skipped). Store apps (registry, per user) added: 86 apps, 39 frameworks, 62 system packages on this machine. Winget is not asked
 3. ✅ Dependency graph (Dependencies page): projects ↔ installed runtimes they state a need for, unmet requirements, per-install footprint, installs nothing states a need for. Real machine: 20 projects, none state a runtime version, so only package-manager links exist; the page says so rather than guessing
 
-## Phase 6 – Docker / WSL 🔄
+## Phase 6 – Docker / WSL ✅
 Read-only inspection first (this machine has Docker 29.x and two WSL2 distros). Volumes and WSL data are never auto-deleted.
 
 1. ✅ Docker (through the CLI, fixed read-only commands) and WSL (registry + disk file sizes) on the Containers page. Verified against the live engine: 3 images (6.2 GB), 2 volumes, 23 build-cache entries (5.6 GB); WSL disks: docker-desktop 20.9 GB (data disk 19.8 GB), Ubuntu 2.6 GB. Docker is never started by Sentinel
+2. ✅ Docker cleanup *preview*: what each prune command would remove, Docker's own reclaimable estimate beside the listed items, risk levels, the command shown for you to run yourself. Nothing is executed. Real engine: images 6.2 GB reclaimable, 51 MB of volumes, build cache 5.6 GB listed but 0 B reclaimable (all shared with images)
 
 ## Phase 7 – Monitoring ⬜
 Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth history, anomaly attribution.
@@ -74,10 +75,10 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 6, next: a Docker cleanup *preview* only: what `docker image prune` / build-cache
-prune would remove, shown from Docker's own accounting, with nothing executed. Whether to
-ever offer running prune (a deletion Sentinel cannot quarantine) needs a maintainer
-decision first. After that, Phase 7 (monitoring).
+Phase 7: monitoring. First a spike comparing the NTFS change journal (USN) with
+`ReadDirectoryChangesW` for incremental change tracking, because the choice decides the
+scanner's incremental design. Whether Sentinel should ever run Docker prune is parked
+behind a maintainer decision (see SAFETY_MODEL.md).
 
 ## Completed first milestone (historical)
 
