@@ -15,6 +15,17 @@ fn main() {
             s.reported_bytes
         );
     }
+    for a in &inv.store_apps {
+        println!(
+            "STORE {:?} {} {} {}",
+            a.kind, a.name, a.version, a.architecture
+        );
+    }
+    println!(
+        "{} store packages ({} skipped)",
+        inv.store_apps.len(),
+        inv.store_skipped
+    );
     println!(
         "{} programs, {} skipped, {} bytes reported, warnings: {:?}",
         inv.software.len(),

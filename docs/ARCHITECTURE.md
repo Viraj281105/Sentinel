@@ -288,8 +288,15 @@ names: uninstall and modify command lines are never read. The rules (skip namele
 entries, `SystemComponent`, updates and patches; merge the same name, version and
 publisher across views, keeping the 64-bit entry) live in the pure `interpret()`, which is
 unit-tested without a registry. Sizes are what installers reported (many report none), so
-the total is labelled as an understatement. Winget and Microsoft Store apps need a
-package manager to be asked and are not included yet. Nothing here uninstalls anything.
+the total is labelled as an understatement. Microsoft Store (MSIX) apps come from the
+current user's `AppModel\Repository\Packages` registry key, again with an allow-list of
+two values (`DisplayName`, `PackageRootFolder`). The identity, version and architecture are
+parsed from the package full name; language and scale packs and older versions are
+dropped, unresolved `ms-resource` display names fall back to the identity, and packages
+are classified as app, framework (by name) or system (installed under the Windows
+folder). Only packages registered for this user appear, and Windows gives no publisher or
+size for them. Winget is not asked, since that means running a package manager. Nothing
+here uninstalls anything.
 
 ### Implemented: `sentinel-quarantine`
 

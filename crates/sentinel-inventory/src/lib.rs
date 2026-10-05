@@ -4,9 +4,11 @@
 //! 32-bit view, current user). Only display metadata is read. Uninstall and modify command
 //! lines are never read or returned, and nothing is written or run.
 //!
-//! Not covered yet: winget and Microsoft Store (packaged) apps, which need a package
-//! manager to be asked and are a separate milestone. Portable software that registers
-//! nothing is invisible to this source.
+//! Microsoft Store (packaged, MSIX) apps are read from the current user's package
+//! repository in the registry, again without running anything. That repository lists
+//! only packages registered for this user, and gives no publisher name or size
+//! (`WindowsApps` is not readable). Winget is not asked: it would mean running a package
+//! manager. Portable software that registers nothing is invisible to both sources.
 //!
 //! Entries are skipped when they are not user-facing software: no display name, marked
 //! `SystemComponent`, a patch or update (`ParentKeyName`, `ReleaseType`).
@@ -48,12 +50,45 @@ pub struct InstalledSoftware {
     pub key: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum StoreKind {
+    App,
+    /// Shared libraries other apps depend on (VC++ libraries, WinUI, .NET Native...).
+    Framework,
+    /// Part of Windows itself (installed under the Windows folder).
+    System,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StoreApp {
+    /// The app's display name, or its package identity when Windows only gave a
+    /// resource reference.
+    pub name: String,
+    /// Package identity name, e.g. `Microsoft.WindowsCalculator`.
+    pub identity: String,
+    pub version: String,
+    pub architecture: String,
+    pub kind: StoreKind,
+    pub root_folder: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SoftwareInventory {
     /// Alphabetical by name.
     pub software: Vec<InstalledSoftware>,
+    /// Store packages registered for this user: apps, then frameworks, then system
+    /// packages, each alphabetical.
+    pub store_apps: Vec<StoreApp>,
+    /// Package entries left out: language and scale resource packs, older versions of a
+    /// package, and keys that are not package names.
+    #[ts(type = "number")]
+    pub store_skipped: u64,
     /// Entries left out as updates, system components or nameless.
     #[ts(type = "number")]
     pub skipped: u64,
@@ -171,10 +206,108 @@ pub fn interpret(entries: &[RawEntry], warnings: Vec<String>) -> SoftwareInvento
     let reported_bytes = software.iter().filter_map(|s| s.reported_bytes).sum();
     SoftwareInventory {
         software,
+        store_apps: Vec::new(),
+        store_skipped: 0,
         skipped,
         reported_bytes,
         warnings,
     }
+}
+
+/// A Store package key: its full name and the values read from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawPackage {
+    pub full_name: String,
+    pub display_name: Option<String>,
+    pub root_folder: Option<String>,
+}
+
+const FRAMEWORK_MARKERS: &[&str] = &[
+    "vclibs",
+    "net.native",
+    "ui.xaml",
+    "windowsappruntime",
+    "winappruntime",
+    "directxruntime",
+    "services.store.engagement",
+    "microsoft.net.",
+    "windows.sdk",
+];
+
+fn version_key(v: &str) -> Vec<u64> {
+    v.split('.').map(|p| p.parse().unwrap_or(0)).collect()
+}
+
+/// `Name_1.2.3.4_x64__8wekyb3d8bbwe` -> (name, version, architecture, resource id).
+fn split_full_name(full: &str) -> Option<(&str, &str, &str, &str)> {
+    let p: Vec<&str> = full.split('_').collect();
+    (p.len() == 5 && !p[0].is_empty() && !p[1].is_empty() && p[4].len() >= 8)
+        .then(|| (p[0], p[1], p[2], p[3]))
+}
+
+/// Turn raw Store package keys into apps. Pure.
+pub fn interpret_store(packages: &[RawPackage]) -> (Vec<StoreApp>, u64) {
+    let mut skipped = 0u64;
+    let mut newest: BTreeMap<(String, String), StoreApp> = BTreeMap::new();
+    for p in packages {
+        let Some((identity, version, arch, resource)) = split_full_name(&p.full_name) else {
+            skipped += 1;
+            continue;
+        };
+        // Language and scale packs ("split.scale-150", "language-fr") are parts of an app.
+        if !resource.is_empty() && resource != "neutral" {
+            skipped += 1;
+            continue;
+        }
+        let root = p
+            .root_folder
+            .as_ref()
+            .map(|r| r.trim().to_owned())
+            .filter(|r| !r.is_empty());
+        let lower_root = root.as_deref().unwrap_or("").to_lowercase();
+        let lower_id = identity.to_lowercase();
+        let kind = if lower_root.contains(r":\windows\") {
+            StoreKind::System
+        } else if FRAMEWORK_MARKERS.iter().any(|m| lower_id.contains(m)) {
+            StoreKind::Framework
+        } else {
+            StoreKind::App
+        };
+        let name = p
+            .display_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| {
+                !n.is_empty()
+                    && n.len() <= 200
+                    && !n.starts_with("@{")
+                    && !n.starts_with("ms-resource:")
+            })
+            .unwrap_or(identity)
+            .to_owned();
+        let app = StoreApp {
+            name,
+            identity: identity.to_owned(),
+            version: version.to_owned(),
+            architecture: arch.to_owned(),
+            kind,
+            root_folder: root,
+        };
+        let key = (lower_id, arch.to_lowercase());
+        match newest.get(&key) {
+            Some(old) if version_key(&old.version) >= version_key(&app.version) => skipped += 1,
+            Some(_) => {
+                skipped += 1;
+                newest.insert(key, app);
+            }
+            None => {
+                newest.insert(key, app);
+            }
+        }
+    }
+    let mut apps: Vec<StoreApp> = newest.into_values().collect();
+    apps.sort_by_cached_key(|a| (a.kind, a.name.to_lowercase(), a.identity.clone()));
+    (apps, skipped)
 }
 
 #[cfg(windows)]
@@ -186,7 +319,7 @@ mod registry {
         HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, KEY_WOW64_64KEY,
     };
 
-    use super::{RawEntry, Scope, Value};
+    use super::{RawEntry, RawPackage, Scope, Value};
 
     const UNINSTALL: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
     /// Values worth reading; nothing else (in particular no uninstall command lines).
@@ -211,6 +344,37 @@ mod registry {
             .map(Value::Number)
             .or_else(|_| key.get_value::<String, _>(name).map(Value::Text))
             .ok()
+    }
+
+    const PACKAGES: &str = r"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
+
+    pub(super) fn read_packages(warnings: &mut Vec<String>) -> Vec<RawPackage> {
+        let root =
+            match RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(PACKAGES, KEY_READ) {
+                Ok(k) => k,
+                Err(e) => {
+                    warnings.push(format!("The Store package list could not be opened: {e}"));
+                    return Vec::new();
+                }
+            };
+        let mut out = Vec::new();
+        for (i, name) in root.enum_keys().flatten().enumerate() {
+            if i >= MAX_KEYS {
+                warnings.push(format!(
+                    "The Store package list was cut off at {MAX_KEYS} entries."
+                ));
+                break;
+            }
+            let Ok(sub) = root.open_subkey_with_flags(&name, KEY_READ) else {
+                continue;
+            };
+            out.push(RawPackage {
+                full_name: name,
+                display_name: sub.get_value::<String, _>("DisplayName").ok(),
+                root_folder: sub.get_value::<String, _>("PackageRootFolder").ok(),
+            });
+        }
+        out
     }
 
     pub(super) fn read_all(warnings: &mut Vec<String>) -> Vec<RawEntry> {
@@ -275,8 +439,11 @@ mod registry {
 pub fn inventory_software() -> SoftwareInventory {
     let mut warnings = Vec::new();
     let entries = registry::read_all(&mut warnings);
-    let inv = interpret(&entries, warnings);
+    let mut inv = interpret(&entries, warnings);
+    let packages = registry::read_packages(&mut inv.warnings);
+    (inv.store_apps, inv.store_skipped) = interpret_store(&packages);
     tracing::info!(
+        store = inv.store_apps.len(),
         software = inv.software.len(),
         skipped = inv.skipped,
         "software inventory finished"
@@ -286,6 +453,8 @@ pub fn inventory_software() -> SoftwareInventory {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
 
     fn raw(key: &str, scope: Scope, vals: &[(&str, Value)]) -> RawEntry {
@@ -424,5 +593,68 @@ mod tests {
             .map(|s| s.name)
             .collect();
         assert_eq!(names, ["Alpha", "zeta"]);
+    }
+
+    fn pkg(full: &str, display: Option<&str>, root: &str) -> RawPackage {
+        RawPackage {
+            full_name: full.to_owned(),
+            display_name: display.map(str::to_owned),
+            root_folder: Some(root.to_owned()),
+        }
+    }
+    const WA: &str = r"C:\Program Files\WindowsApps\x";
+
+    #[test]
+    fn store_names_kinds_and_resource_references() {
+        let (apps, skipped) = interpret_store(&[
+            pkg(
+                "5319275A.WhatsAppDesktop_2.2638.102.0_x64__cv1g1gvanyjgm",
+                Some("WhatsApp"),
+                WA,
+            ),
+            pkg(
+                "B9ECED6F.ArmouryCrate_6.5.14.0_x64__qmba6cd70vzyy",
+                Some("@{B9ECED6F.ArmouryCrate_6.5?ms-resource://x/y}"),
+                WA,
+            ),
+            pkg(
+                "Microsoft.VCLibs.140.00_14.0.33519.0_x64__8wekyb3d8bbwe",
+                Some("Microsoft Visual C++ 2015 UWP Runtime Package"),
+                WA,
+            ),
+            pkg(
+                "Microsoft.AccountsControl_10.0.26100.1_neutral__cw5n1h2txyewy",
+                Some("ms-resource:AppName"),
+                r"C:\Windows\SystemApps\Microsoft.AccountsControl",
+            ),
+        ]);
+        assert_eq!(skipped, 0);
+        let by = |id: &str| apps.iter().find(|a| a.identity == id).unwrap();
+        assert_eq!(by("5319275A.WhatsAppDesktop").name, "WhatsApp");
+        assert_eq!(by("B9ECED6F.ArmouryCrate").name, "B9ECED6F.ArmouryCrate");
+        assert_eq!(by("5319275A.WhatsAppDesktop").kind, StoreKind::App);
+        assert_eq!(by("Microsoft.VCLibs.140.00").kind, StoreKind::Framework);
+        assert_eq!(by("Microsoft.AccountsControl").kind, StoreKind::System);
+        assert_eq!(apps.last().unwrap().kind, StoreKind::System);
+    }
+
+    #[test]
+    fn store_skips_resource_packs_and_keeps_the_newest_version() {
+        let (apps, skipped) = interpret_store(&[
+            pkg("Vendor.App_1.0.0.0_x64__abcdefgh1234", Some("App"), WA),
+            pkg("Vendor.App_1.10.0.0_x64__abcdefgh1234", Some("App"), WA),
+            pkg("Vendor.App_1.9.0.0_x64__abcdefgh1234", Some("App"), WA),
+            pkg(
+                "Vendor.App_1.10.0.0_neutral_split.scale-150_abcdefgh1234",
+                Some("App"),
+                WA,
+            ),
+            pkg("Vendor.App_1.0.0.0_x86__abcdefgh1234", Some("App"), WA),
+            pkg("not-a-package-name", None, WA),
+        ]);
+        assert_eq!(apps.len(), 2, "x64 and x86 are separate");
+        let x64 = apps.iter().find(|a| a.architecture == "x64").unwrap();
+        assert_eq!(x64.version, "1.10.0.0", "1.10 is newer than 1.9");
+        assert_eq!(skipped, 4);
     }
 }

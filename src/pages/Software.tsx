@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { InstalledSoftware } from "../bindings/InstalledSoftware";
 import type { Scope } from "../bindings/Scope";
 import type { SoftwareInventory } from "../bindings/SoftwareInventory";
+import type { StoreApp } from "../bindings/StoreApp";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
 import { formatBytes } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
@@ -37,6 +38,39 @@ function Row({ s }: { s: InstalledSoftware }) {
   );
 }
 
+function StoreSection({ apps, skipped }: { apps: StoreApp[]; skipped: number }) {
+  const [all, setAll] = useState(false);
+  const shown = apps.filter((a) => all || a.kind === "app");
+  const hidden = apps.length - apps.filter((a) => a.kind === "app").length;
+  return (
+    <Panel title={`Microsoft Store apps (${apps.filter((a) => a.kind === "app").length})`}>
+      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+        Packages registered for your Windows account. Windows gives no publisher or size for these. {skipped} language
+        packs, older versions and unreadable entries were left out.
+      </p>
+      <label className="mb-2 flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
+        Include frameworks and Windows system packages ({hidden})
+      </label>
+      <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+        {shown.map((a) => (
+          <li key={`${a.identity}|${a.architecture}`} className="flex gap-3 py-2 text-sm" title={a.rootFolder ?? undefined}>
+            <div className="w-0 flex-1">
+              <p className="truncate font-medium">{a.name}</p>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                {a.identity} · {a.version} · {a.architecture}
+              </p>
+            </div>
+            {a.kind !== "app" && (
+              <span className="shrink-0 text-xs text-slate-500">{a.kind === "framework" ? "Framework" : "System"}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
 export function Software() {
   const [state, setState] = useState<
     { s: "loading" } | { s: "done"; inv: SoftwareInventory } | { s: "error"; message: string }
@@ -67,7 +101,7 @@ export function Software() {
     <>
       <PageHeader
         title="Software"
-        subtitle="Installed applications from the Windows uninstall registry. Read-only: Sentinel does not uninstall anything."
+        subtitle="Installed applications from the Windows uninstall registry and the Microsoft Store package list. Read-only: Sentinel does not uninstall anything."
       />
       {state.s === "loading" && <Loading />}
       {state.s === "error" && <ErrorNote message={state.message} />}
@@ -75,8 +109,7 @@ export function Software() {
         <Panel title={`${state.inv.software.length} programs`}>
           <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             Sizes are what each installer reported, and many report none, so the{" "}
-            {formatBytes(state.inv.reportedBytes)} total understates real use. Winget and Microsoft Store apps are not
-            included yet. {state.inv.skipped} updates, system components and nameless entries were left out.
+            {formatBytes(state.inv.reportedBytes)} total understates real use. Winget is not asked. {state.inv.skipped} updates, system components and nameless entries were left out.
           </p>
           <div className="mb-2 flex gap-3">
             <input
@@ -115,6 +148,11 @@ export function Software() {
             </p>
           ))}
         </Panel>
+      )}
+      {state.s === "done" && (
+        <div className="mt-6">
+          <StoreSection apps={state.inv.storeApps} skipped={state.inv.storeSkipped} />
+        </div>
       )}
     </>
   );
