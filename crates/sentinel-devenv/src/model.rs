@@ -43,6 +43,9 @@ pub enum Runtime {
     Python,
     Rust,
     Go,
+    Java,
+    DotNet,
+    AndroidSdk,
 }
 
 /// A runtime version a project asks for, and the file that says so.

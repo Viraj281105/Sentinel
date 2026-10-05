@@ -8,9 +8,11 @@ import type { Project } from "../bindings/Project";
 import type { ProjectSearch } from "../bindings/ProjectSearch";
 import { JvmCaches } from "../components/JvmCaches";
 import { ProjectCleanup } from "../components/ProjectCleanup";
+import { RuntimeInventory } from "../components/RuntimeInventory";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
 import { formatAge, formatBytes, formatDateTime } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
+import { RUNTIME_NAMES } from "../lib/runtimes";
 
 /** A project counts as inactive when nothing in it changed for this long. */
 export const INACTIVE_DAYS = 90;
@@ -122,7 +124,7 @@ function ProjectRow({ p, now }: { p: Project; now: number }) {
               <ul>
                 {p.runtimes.map((r) => (
                   <li key={`${r.source}-${r.version}`}>
-                    {ECOSYSTEM[r.runtime]} {r.version} <span className="text-xs text-slate-500">({r.source})</span>
+                    {RUNTIME_NAMES[r.runtime]} {r.version} <span className="text-xs text-slate-500">({r.source})</span>
                   </li>
                 ))}
               </ul>
@@ -326,6 +328,7 @@ export function Projects() {
             </ul>
           </Panel>
         )}
+        <RuntimeInventory />
         <JvmCaches />
       </div>
     </>

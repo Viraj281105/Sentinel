@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use sentinel_devenv::{
-    DetectOptions, Detection, Ecosystem, JvmAnalysis, analyze_jvm_caches, detect,
+    DetectOptions, Detection, Ecosystem, JvmAnalysis, Locations, RuntimeInventory,
+    analyze_jvm_caches, detect, inventory_runtimes,
 };
 use sentinel_safety::{Known, known_folder};
 use serde::Serialize;
@@ -111,6 +112,25 @@ pub(crate) async fn jvm_caches(state: State<'_, AppState>) -> Result<JvmAnalysis
     })
     .await
     .map_err(|e| CommandError::internal("analyzing Java build caches", e))?
+}
+
+/// Installed runtimes (Node.js, Python, Java, .NET, Rust, Go, Android SDK) and which
+/// searched projects' stated requirements they meet. Reads install folders only; a
+/// standalone Node.js install is asked its version with a fixed argument.
+#[tauri::command]
+pub(crate) async fn runtime_inventory(
+    state: State<'_, AppState>,
+) -> Result<RuntimeInventory, CommandError> {
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let projects: Vec<_> = saved_searches(&db)?
+            .into_iter()
+            .flat_map(|s| s.detection.projects)
+            .collect();
+        Ok(inventory_runtimes(&Locations::from_env(), &projects))
+    })
+    .await
+    .map_err(|e| CommandError::internal("taking the runtime inventory", e))?
 }
 
 /// Forget a searched folder (nothing on disk is touched).

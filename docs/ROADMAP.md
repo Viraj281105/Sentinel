@@ -42,8 +42,10 @@ Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, 
 4. ✅ Inactive project cleanup from the Projects page: re-inspected at preview and run time, 90-day inactivity over the whole project tree, artifact folders only, never anything Git tracks (own index parser). Real machine: 1.15 GB eligible in 3 projects; a committed venv correctly protected
 5. ✅ Maven/Gradle cache analysis (read-only, Projects page): sizes, multiple versions, failed downloads, Gradle versions no searched project uses, exact declared versions. Real machine: Maven 101.5 MB, 452 versions, 50 artifacts with several versions (11.1 MB older)
 
-## Phase 5 – Inventory & graph ⬜
+## Phase 5 – Inventory & graph 🔄
 Software inventory (registry, winget, Store), runtime inventory, dependency graph.
+
+1. ✅ Runtime inventory (Projects page, read-only): Node.js, Python, Java, .NET, Rust, Go and Android SDK installs with sizes, matched to the runtime versions searched projects state. Real machine: 25 installs found (Node 24.19.0, Python 3.11.9, Rust 1.98.1, JDK 21.0.9, .NET 10.0.102, Android SDK 34-36)
 
 ## Phase 6 – Docker / WSL ⬜
 Read-only inspection first (this machine has Docker 29.x and two WSL2 distros). Volumes and WSL data are never auto-deleted.
@@ -68,10 +70,8 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 5, first milestone: runtime inventory. Detect installed Node.js, Python, Java/JDK,
-.NET, Rust, Go and Android SDK versions from their install locations and version managers
-(read-only; no runtime is executed unless its path is resolved and arguments are fixed),
-and show which searched projects require each version.
+Phase 5, next: software inventory (uninstall registry keys, winget, Microsoft Store),
+read-only, with install sizes where the registry reports them.
 
 ## Completed first milestone (historical)
 

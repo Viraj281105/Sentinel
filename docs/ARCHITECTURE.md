@@ -123,7 +123,7 @@ Crates are created only when their first real feature lands (no empty scaffoldin
   `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only), `project_searches`,
   `find_projects`, `remove_project_search`, `audit_log`, `audit_verify`, `cleanup_run`,
   `quarantine_contents`, `quarantine_restore`, `project_cleanup_preview`,
-  `project_cleanup_run`, `jvm_caches`. Each wraps a
+  `project_cleanup_run`, `jvm_caches`, `runtime_inventory`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -263,6 +263,20 @@ files, and each project's wrapper version from `gradle-wrapper.properties`. Last
 unknowable (tools do not touch cached files; Windows does not track access), so dates
 are download dates and nothing is labelled unused. `settings.xml` is never read.
 Nothing here cleans anything.
+
+### Implemented: runtime inventory (`sentinel_devenv::inventory_runtimes`)
+
+Read-only. Looks for Node.js (nvm-windows, fnm, Volta, the installer), Python
+(python.org installer, pyenv-win, uv), Java (vendor folders under Program Files,
+`~\.jdks`, Gradle toolchain downloads, Android Studio's runtime, `JAVA_HOME`), .NET
+(SDKs and the shared runtime), Rust (rustup), Go and the Android SDK, with each install's
+size. Versions come from the install's own files (`release`, `VERSION`,
+`include\patchlevel.h`, the rustup manifest) or a version manager's folder name. The
+single exception is a standalone Node.js install, which has no version file: its resolved
+`node.exe` is run with the fixed argument `--version`, no shell, a 5 s limit and no
+window. Installs are matched to saved-search projects through `satisfies()`: a
+requirement that is not understood (`lts/*`) is neither met nor unmet. Scoop, winget-only
+layouts and Windows Store Python are not searched. Nothing here uninstalls anything.
 
 ### Implemented: `sentinel-quarantine`
 

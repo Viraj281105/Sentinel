@@ -16,6 +16,7 @@ import type { ProjectSearch } from "../bindings/ProjectSearch";
 import type { ProtectedLocation } from "../bindings/ProtectedLocation";
 import type { ProviderInfo } from "../bindings/ProviderInfo";
 import type { QuarantineContents } from "../bindings/QuarantineContents";
+import type { RuntimeInventory } from "../bindings/RuntimeInventory";
 import type { ScanStatus } from "../bindings/ScanStatus";
 
 // Fallible commands reject with a `CommandError` ({ kind, message }).
@@ -37,6 +38,7 @@ export const ipc = {
   findProjects: (root: string) => invoke<ProjectSearch>("find_projects", { root }),
   removeProjectSearch: (root: string) => invoke<boolean>("remove_project_search", { root }),
   jvmCaches: () => invoke<JvmAnalysis>("jvm_caches"),
+  runtimeInventory: () => invoke<RuntimeInventory>("runtime_inventory"),
   projectCleanupPreview: (projects: string[]) => invoke<PreviewResponse>("project_cleanup_preview", { projects }),
   projectCleanupRun: (projects: string[], approved: string[]) =>
     invoke<CleanupRunResponse>("project_cleanup_run", { projects, approved }),
