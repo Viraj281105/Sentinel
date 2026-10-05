@@ -256,7 +256,7 @@ impl ScanTree {
     }
 }
 
-struct Ctx<'a> {
+pub(crate) struct Ctx<'a> {
     ctl: &'a ScanControl,
     opts: &'a ScanOptions,
     exclude: Vec<PathBuf>,
@@ -271,17 +271,18 @@ struct Ctx<'a> {
     largest_floor: AtomicU64,
 }
 
-struct Walked {
-    name: String,
-    own_bytes: u64,
-    own_logical: u64,
-    own_files: u64,
-    status: NodeStatus,
-    children: Vec<Walked>,
+/// A scanned subtree before it is flattened into the arena.
+pub(crate) struct Walked {
+    pub(crate) name: String,
+    pub(crate) own_bytes: u64,
+    pub(crate) own_logical: u64,
+    pub(crate) own_files: u64,
+    pub(crate) status: NodeStatus,
+    pub(crate) children: Vec<Walked>,
 }
 
 impl Walked {
-    fn leaf(name: String, status: NodeStatus) -> Self {
+    pub(crate) fn leaf(name: String, status: NodeStatus) -> Self {
         Self {
             name,
             own_bytes: 0,
@@ -293,7 +294,23 @@ impl Walked {
     }
 }
 
-impl Ctx<'_> {
+impl<'a> Ctx<'a> {
+    fn new(ctl: &'a ScanControl, opts: &'a ScanOptions, exclude: Vec<PathBuf>) -> Self {
+        Self {
+            ctl,
+            opts,
+            exclude,
+            entries: AtomicU64::new(0),
+            denied: AtomicU64::new(0),
+            errors: AtomicU64::new(0),
+            links: AtomicU64::new(0),
+            excluded: AtomicU64::new(0),
+            truncated: AtomicBool::new(false),
+            largest: Mutex::new(BinaryHeap::new()),
+            largest_floor: AtomicU64::new(0),
+        }
+    }
+
     fn is_excluded(&self, path: &Path) -> bool {
         self.exclude.iter().any(|e| is_within(path, e))
     }
@@ -321,7 +338,13 @@ impl Ctx<'_> {
         }
     }
 
-    fn walk(&self, path: &Path, name: String, depth: u32) -> Walked {
+    pub(crate) fn walk(&self, path: &Path, name: String, depth: u32) -> Walked {
+        self.walk_with(path, name, depth, false)
+    }
+
+    /// `shallow` reads just this directory: its subdirectories come back as unscanned
+    /// `DepthLimit` leaves (used to refresh one directory without re-reading its tree).
+    pub(crate) fn walk_with(&self, path: &Path, name: String, depth: u32, shallow: bool) -> Walked {
         if self.ctl.is_cancelled() {
             return Walked::leaf(
                 name,
@@ -396,13 +419,13 @@ impl Ctx<'_> {
 
         let limit = if over_budget {
             Some(NotScannedReason::EntryLimit)
-        } else if depth >= self.opts.max_depth {
+        } else if shallow || depth >= self.opts.max_depth {
             Some(NotScannedReason::DepthLimit)
         } else {
             None
         };
         if let Some(reason) = limit {
-            if !subdirs.is_empty() {
+            if !subdirs.is_empty() && !shallow {
                 self.truncated.store(true, Relaxed);
             }
             node.children.extend(
@@ -421,6 +444,58 @@ impl Ctx<'_> {
     }
 }
 
+fn scan_pool(opts: &ScanOptions) -> Result<rayon::ThreadPool, ScanError> {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(opts.threads.max(1))
+        .stack_size(8 * 1024 * 1024)
+        .thread_name(|i| format!("sentinel-scan-{i}"))
+        .build()
+        .map_err(|e| ScanError::ThreadPool(e.to_string()))
+}
+
+/// What a batch of walks produced besides the subtrees themselves.
+pub(crate) struct WalkExtras {
+    /// Largest files seen by these walks (at most `opts.largest_files`).
+    pub(crate) largest: Vec<LargeFile>,
+    /// A depth or entry budget cut a (non-shallow) walk short.
+    pub(crate) truncated: bool,
+}
+
+/// Run `f` with a context and a scanner thread pool, as `scan` does, and return its
+/// result together with what the walks observed. Used by the incremental rescan.
+pub(crate) fn run_walks<R: Send>(
+    opts: &ScanOptions,
+    ctl: &ScanControl,
+    f: impl FnOnce(&Ctx<'_>) -> R + Send,
+) -> Result<(R, WalkExtras), ScanError> {
+    let exclude = opts
+        .exclude
+        .iter()
+        .map(|e| {
+            CanonicalPath::resolve(e)
+                .map(|c| c.as_path().to_path_buf())
+                .unwrap_or_else(|_| e.clone())
+        })
+        .collect();
+    let ctx = Ctx::new(ctl, opts, exclude);
+    let pool = scan_pool(opts)?;
+    let out = pool.install(|| f(&ctx));
+    let truncated = ctx.truncated.load(Relaxed);
+    let mut largest: Vec<_> = ctx
+        .largest
+        .into_inner()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|Reverse((bytes, logical_bytes, path))| LargeFile {
+            path: path.display().to_string(),
+            bytes,
+            logical_bytes,
+        })
+        .collect();
+    largest.sort_by_key(|f| Reverse((f.bytes, f.logical_bytes)));
+    Ok((out, WalkExtras { largest, truncated }))
+}
+
 /// Scan `root` and everything beneath it. Read-only.
 pub fn scan(root: &Path, opts: &ScanOptions, ctl: &ScanControl) -> Result<ScanTree, ScanError> {
     let started = Instant::now();
@@ -437,25 +512,8 @@ pub fn scan(root: &Path, opts: &ScanOptions, ctl: &ScanControl) -> Result<ScanTr
                 .unwrap_or_else(|_| e.clone())
         })
         .collect();
-    let ctx = Ctx {
-        ctl,
-        opts,
-        exclude,
-        entries: AtomicU64::new(0),
-        denied: AtomicU64::new(0),
-        errors: AtomicU64::new(0),
-        links: AtomicU64::new(0),
-        excluded: AtomicU64::new(0),
-        truncated: AtomicBool::new(false),
-        largest: Mutex::new(BinaryHeap::new()),
-        largest_floor: AtomicU64::new(0),
-    };
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(opts.threads.max(1))
-        .stack_size(8 * 1024 * 1024)
-        .thread_name(|i| format!("sentinel-scan-{i}"))
-        .build()
-        .map_err(|e| ScanError::ThreadPool(e.to_string()))?;
+    let ctx = Ctx::new(ctl, opts, exclude);
+    let pool = scan_pool(opts)?;
     let walked = pool.install(|| ctx.walk(&root, root.display().to_string(), 0));
 
     let mut nodes = Vec::new();
@@ -508,7 +566,7 @@ pub fn scan(root: &Path, opts: &ScanOptions, ctl: &ScanControl) -> Result<ScanTr
 }
 
 /// Move a walked subtree into the arena, computing subtree totals. Returns its id.
-fn flatten(w: Walked, parent: Option<NodeId>, nodes: &mut Vec<DirNode>) -> NodeId {
+pub(crate) fn flatten(w: Walked, parent: Option<NodeId>, nodes: &mut Vec<DirNode>) -> NodeId {
     let id = nodes.len() as NodeId;
     nodes.push(DirNode {
         name: w.name,
