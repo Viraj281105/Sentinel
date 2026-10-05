@@ -428,5 +428,5 @@ database stays on this machine.
 ## 6. Open questions
 
 1. Elevation model: helper process vs. per-operation UAC prompt (decide at Phase 3).
-2. Whether USN Journal monitoring justifies its admin requirement vs. `ReadDirectoryChangesW` on chosen roots (Phase 7 spike).
+2. ~~Whether USN Journal monitoring justifies its admin requirement~~ – resolved by the Phase 7 spike (docs/spikes/PHASE7_CHANGE_TRACKING.md): use `ReadDirectoryChangesW` unelevated as a hint layer feeding incremental rescans; the journal's records need elevation and its 32 MB cap holds only about three hours of history here. Its metadata (readable unelevated) is used to skip rescans of unchanged volumes.
 3. ~~Type-sharing tool~~ – resolved: `ts-rs`.

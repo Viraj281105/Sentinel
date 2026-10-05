@@ -1,0 +1,24 @@
+[package]
+name = "spike-change-tracking"
+description = "Phase 7 spike: NTFS change journal (USN) vs ReadDirectoryChangesW. Throwaway; never shipped."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+  "Win32_System_Threading",
+]
+
+[dev-dependencies]
+tempfile = "3"

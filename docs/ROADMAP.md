@@ -55,8 +55,10 @@ Read-only inspection first (this machine has Docker 29.x and two WSL2 distros). 
 1. ✅ Docker (through the CLI, fixed read-only commands) and WSL (registry + disk file sizes) on the Containers page. Verified against the live engine: 3 images (6.2 GB), 2 volumes, 23 build-cache entries (5.6 GB); WSL disks: docker-desktop 20.9 GB (data disk 19.8 GB), Ubuntu 2.6 GB. Docker is never started by Sentinel
 2. ✅ Docker cleanup *preview*: what each prune command would remove, Docker's own reclaimable estimate beside the listed items, risk levels, the command shown for you to run yourself. Nothing is executed. Real engine: images 6.2 GB reclaimable, 51 MB of volumes, build cache 5.6 GB listed but 0 B reclaimable (all shared with images)
 
-## Phase 7 – Monitoring ⬜
+## Phase 7 – Monitoring 🔄
 Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth history, anomaly attribution.
+
+1. ✅ Spike (docs/spikes/PHASE7_CHANGE_TRACKING.md): unelevated, the USN journal's metadata is readable but its records are not; `ReadDirectoryChangesW` lost no events with a fast reader and lost whole intervals when the reader stalled. Decision: watch with `ReadDirectoryChangesW` as a dirty-directory hint, rescan on overflow, and use the journal position to skip unchanged volumes
 
 ## Phase 8 – AI abstraction ⬜
 `AiProvider` trait, Ollama + OpenAI-compatible, redaction layer, schema validation, NL → structured query.
@@ -75,10 +77,10 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 7: monitoring. First a spike comparing the NTFS change journal (USN) with
-`ReadDirectoryChangesW` for incremental change tracking, because the choice decides the
-scanner's incremental design. Whether Sentinel should ever run Docker prune is parked
-behind a maintainer decision (see SAFETY_MODEL.md).
+Phase 7, next: the folder watcher in `sentinel-scanner`: one recursive watcher per scanned
+root with a reader that only enqueues, a deduplicated dirty-directory set with noisy
+folders dropped, overflow handled as "rescan the root", and incremental rescans of the
+dirty directories. Design points are in the spike write-up.
 
 ## Completed first milestone (historical)
 
