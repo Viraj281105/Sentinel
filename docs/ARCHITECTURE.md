@@ -124,7 +124,7 @@ Crates are created only when their first real feature lands (no empty scaffoldin
   `scan_largest_files`, `cleanup_providers`, `cleanup_preview` (dry-run only), `project_searches`,
   `find_projects`, `remove_project_search`, `audit_log`, `audit_verify`, `cleanup_run`,
   `quarantine_contents`, `quarantine_restore`, `project_cleanup_preview`,
-  `project_cleanup_run`, `jvm_caches`, `runtime_inventory`, `software_inventory`. Each wraps a
+  `project_cleanup_run`, `jvm_caches`, `runtime_inventory`, `software_inventory`, `dependency_graph`. Each wraps a
   plain function that is unit-tested without a running app. Commands are registered by
   full module path because `#[tauri::command]` companion items do not survive re-exports.
 - IPC types derive `ts_rs::TS`; `cargo test -p sentinel-app` writes them to
@@ -278,6 +278,19 @@ single exception is a standalone Node.js install, which has no version file: its
 window. Installs are matched to saved-search projects through `satisfies()`: a
 requirement that is not understood (`lts/*`) is neither met nor unmet. Scoop, winget-only
 layouts and Windows Store Python are not searched. Nothing here uninstalls anything.
+
+### Implemented: dependency graph (`sentinel_devenv::build_dependency_graph`)
+
+Pure; built from the saved project searches and a runtime inventory, so it reads nothing
+new. Nodes are projects, installed runtimes, package managers and placeholders for
+requested-but-missing versions. `Requires` edges connect a project to every install that
+satisfies a version the project's own files state; `Unmet` edges point at the placeholder;
+`Uses` edges link projects to their package managers. A project that states no runtime
+version is never linked to an install (Sentinel does not guess), and is listed instead.
+Each install gets a footprint: its size plus the rebuildable artifacts of the projects
+that depend on it. Installs of Node.js, Python, Rust or Go that no stated requirement
+needs are flagged, with the caveat that projects stating no version may still use them;
+Java, .NET and Android installs are never judged because their requirements are not parsed.
 
 ### Implemented: software inventory (`sentinel_inventory::inventory_software`)
 

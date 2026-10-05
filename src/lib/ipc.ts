@@ -6,6 +6,7 @@ import type { AuditEntry } from "../bindings/AuditEntry";
 import type { AuditIntegrity } from "../bindings/AuditIntegrity";
 import type { CleanupRunResponse } from "../bindings/CleanupRunResponse";
 import type { DirListing } from "../bindings/DirListing";
+import type { DependencyGraph } from "../bindings/DependencyGraph";
 import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
 import type { JvmAnalysis } from "../bindings/JvmAnalysis";
@@ -40,6 +41,7 @@ export const ipc = {
   removeProjectSearch: (root: string) => invoke<boolean>("remove_project_search", { root }),
   jvmCaches: () => invoke<JvmAnalysis>("jvm_caches"),
   softwareInventory: () => invoke<SoftwareInventory>("software_inventory"),
+  dependencyGraph: () => invoke<DependencyGraph>("dependency_graph"),
   runtimeInventory: () => invoke<RuntimeInventory>("runtime_inventory"),
   projectCleanupPreview: (projects: string[]) => invoke<PreviewResponse>("project_cleanup_preview", { projects }),
   projectCleanupRun: (projects: string[], approved: string[]) =>

@@ -40,7 +40,7 @@ export const PAGES: PageDef[] = [
   { id: "storage", label: "Storage", icon: HardDrive, plannedPhase: null, summary: "Drive usage, category breakdown and drill-down into large directories." },
   { id: "cleanup", label: "Cleanup", icon: Brush, plannedPhase: null, summary: "Policy-checked cleanup with dry-run, quarantine and restore." },
   { id: "software", label: "Software", icon: Package, plannedPhase: null, summary: "Installed applications from the Windows uninstall registry (winget and Store apps are not included yet)." },
-  { id: "dependencies", label: "Dependencies", icon: Layers, plannedPhase: 5, summary: "Runtimes, the projects that use them, and their disk footprint." },
+  { id: "dependencies", label: "Dependencies", icon: Layers, plannedPhase: null, summary: "Runtimes, the projects that use them, and their disk footprint." },
   { id: "projects", label: "Projects", icon: FolderGit2, plannedPhase: null, summary: "Detected development projects, their artifacts and environments." },
   { id: "environments", label: "Environments", icon: Boxes, plannedPhase: 5, summary: "Language runtimes and toolchains with active and stale versions." },
   { id: "containers", label: "Containers", icon: Container, plannedPhase: 6, summary: "Docker images, containers, volumes and WSL distributions (read-only)." },

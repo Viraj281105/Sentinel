@@ -42,11 +42,12 @@ Decisions approved 2026-09-30: per-volume quarantine (14 days), unelevated app, 
 4. ✅ Inactive project cleanup from the Projects page: re-inspected at preview and run time, 90-day inactivity over the whole project tree, artifact folders only, never anything Git tracks (own index parser). Real machine: 1.15 GB eligible in 3 projects; a committed venv correctly protected
 5. ✅ Maven/Gradle cache analysis (read-only, Projects page): sizes, multiple versions, failed downloads, Gradle versions no searched project uses, exact declared versions. Real machine: Maven 101.5 MB, 452 versions, 50 artifacts with several versions (11.1 MB older)
 
-## Phase 5 – Inventory & graph 🔄
+## Phase 5 – Inventory & graph ✅
 Software inventory (registry, winget, Store), runtime inventory, dependency graph.
 
 1. ✅ Runtime inventory (Projects page, read-only): Node.js, Python, Java, .NET, Rust, Go and Android SDK installs with sizes, matched to the runtime versions searched projects state. Real machine: 25 installs found (Node 24.19.0, Python 3.11.9, Rust 1.98.1, JDK 21.0.9, .NET 10.0.102, Android SDK 34-36)
 2. ✅ Software inventory from the uninstall registry (Software page, read-only): name, version, publisher, scope, install date, installer-reported size, with updates and system components left out. Real machine: 129 programs (475 entries skipped). Store apps (registry, per user) added: 86 apps, 39 frameworks, 62 system packages on this machine. Winget is not asked
+3. ✅ Dependency graph (Dependencies page): projects ↔ installed runtimes they state a need for, unmet requirements, per-install footprint, installs nothing states a need for. Real machine: 20 projects, none state a runtime version, so only package-manager links exist; the page says so rather than guessing
 
 ## Phase 6 – Docker / WSL ⬜
 Read-only inspection first (this machine has Docker 29.x and two WSL2 distros). Volumes and WSL data are never auto-deleted.
@@ -71,8 +72,9 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 5, next: the dependency graph (projects, the runtimes they need, and shared
-caches), building on the runtime and software inventories.
+Phase 5 is complete apart from cache nodes in the graph. Next: Phase 6, read-only Docker
+and WSL inspection (this machine has Docker 29.x and two WSL2 distros). The first step
+is a decision on how to talk to Docker (CLI with fixed arguments versus the named pipe).
 
 ## Completed first milestone (historical)
 

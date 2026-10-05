@@ -10,6 +10,7 @@
 //! build tool, script or Git hook is run.
 
 mod git;
+mod graph;
 mod inventory;
 mod jvm;
 mod model;
@@ -25,6 +26,10 @@ use sentinel_scanner::dirent::{RawEntry, read_dir};
 use sentinel_scanner::scan::{ScanControl, ScanOptions, ScanTree, scan};
 
 pub use git::tracks_anything_under;
+pub use graph::{
+    DependencyGraph, EdgeKind, GraphEdge, GraphNode, NodeKind, RuntimeFootprint,
+    build_dependency_graph,
+};
 pub use inventory::{
     InstalledRuntime, Locations, RuntimeInventory, RuntimeUse, UnmetRequirement, inventory_runtimes,
 };

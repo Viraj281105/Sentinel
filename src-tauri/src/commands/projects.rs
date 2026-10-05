@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use sentinel_devenv::{
-    DetectOptions, Detection, Ecosystem, JvmAnalysis, Locations, RuntimeInventory,
-    analyze_jvm_caches, detect, inventory_runtimes,
+    DependencyGraph, DetectOptions, Detection, Ecosystem, JvmAnalysis, Locations, RuntimeInventory,
+    analyze_jvm_caches, build_dependency_graph, detect, inventory_runtimes,
 };
 use sentinel_safety::{Known, known_folder};
 use serde::Serialize;
@@ -131,6 +131,26 @@ pub(crate) async fn runtime_inventory(
     })
     .await
     .map_err(|e| CommandError::internal("taking the runtime inventory", e))?
+}
+
+/// Which searched projects need which installed runtimes, with the disk footprint of
+/// each. Built from the saved searches and a fresh runtime inventory; reads nothing else.
+#[tauri::command]
+pub(crate) async fn dependency_graph(
+    state: State<'_, AppState>,
+) -> Result<DependencyGraph, CommandError> {
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut projects: Vec<_> = saved_searches(&db)?
+            .into_iter()
+            .flat_map(|s| s.detection.projects)
+            .collect();
+        projects.sort_by_key(|p| p.path.to_lowercase());
+        let inv = inventory_runtimes(&Locations::from_env(), &projects);
+        Ok(build_dependency_graph(&projects, &inv))
+    })
+    .await
+    .map_err(|e| CommandError::internal("building the dependency graph", e))?
 }
 
 /// Forget a searched folder (nothing on disk is touched).

@@ -6,7 +6,9 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use sentinel_devenv::{DetectOptions, Locations, detect, inventory_runtimes};
+use sentinel_devenv::{
+    DetectOptions, Locations, build_dependency_graph, detect, inventory_runtimes,
+};
 
 fn mib(b: Option<u64>) -> String {
     b.map_or_else(|| "?".into(), |b| format!("{:.1} MB", b as f64 / 1048576.0))
@@ -51,4 +53,12 @@ fn main() {
             u.runtime, u.requirement, u.source, u.project
         );
     }
+    let g = build_dependency_graph(&projects, &inv);
+    println!(
+        "graph: {} nodes, {} edges, {} unreferenced installs, {} projects state no runtime",
+        g.nodes.len(),
+        g.edges.len(),
+        g.unreferenced_runtimes.len(),
+        g.projects_without_requirements.len()
+    );
 }
