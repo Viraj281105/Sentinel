@@ -90,6 +90,11 @@ pub struct DirNode {
     pub file_count: u64,
     /// Directories in the subtree, excluding this one.
     pub dir_count: u64,
+    /// Newest modification time (Unix ms) of any entry directly in this directory, or
+    /// `None` when none was reported.
+    pub own_newest_ms: Option<i64>,
+    /// Newest modification time of any entry anywhere in this subtree.
+    pub newest_ms: Option<i64>,
     pub status: NodeStatus,
 }
 
@@ -102,6 +107,9 @@ pub struct LargeFile {
     pub bytes: u64,
     #[ts(type = "number")]
     pub logical_bytes: u64,
+    /// Last modification time (Unix ms), when the file system reported one.
+    #[ts(type = "number | null")]
+    pub modified_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
@@ -256,6 +264,10 @@ impl ScanTree {
     }
 }
 
+/// Min-heap of the largest files: allocated bytes, logical bytes, path, modified time
+/// (Unix ms, 0 when unknown).
+type LargestHeap = BinaryHeap<Reverse<(u64, u64, PathBuf, i64)>>;
+
 pub(crate) struct Ctx<'a> {
     ctl: &'a ScanControl,
     opts: &'a ScanOptions,
@@ -266,13 +278,14 @@ pub(crate) struct Ctx<'a> {
     links: AtomicU64,
     excluded: AtomicU64,
     truncated: AtomicBool,
-    largest: Mutex<BinaryHeap<Reverse<(u64, u64, PathBuf)>>>,
+    largest: Mutex<LargestHeap>,
     /// Smallest size currently in a full `largest` heap; lets most files skip the lock.
     largest_floor: AtomicU64,
 }
 
 /// A scanned subtree before it is flattened into the arena.
 pub(crate) struct Walked {
+    pub(crate) own_newest_ms: Option<i64>,
     pub(crate) name: String,
     pub(crate) own_bytes: u64,
     pub(crate) own_logical: u64,
@@ -288,6 +301,7 @@ impl Walked {
             own_bytes: 0,
             own_logical: 0,
             own_files: 0,
+            own_newest_ms: None,
             status,
             children: Vec::new(),
         }
@@ -327,12 +341,13 @@ impl<'a> Ctx<'a> {
             e.allocated_bytes,
             e.logical_bytes,
             dir.join(&e.name),
+            e.modified_ms,
         )));
         if heap.len() > limit {
             heap.pop();
         }
         if heap.len() == limit
-            && let Some(Reverse((min, _, _))) = heap.peek()
+            && let Some(Reverse((min, _, _, _))) = heap.peek()
         {
             self.largest_floor.store(*min, Relaxed);
         }
@@ -378,6 +393,9 @@ impl<'a> Ctx<'a> {
         let mut node = Walked::leaf(name, NodeStatus::Complete);
         let mut subdirs = Vec::new();
         for e in entries {
+            if e.modified_ms > 0 {
+                node.own_newest_ms = node.own_newest_ms.max(Some(e.modified_ms));
+            }
             if !e.is_dir() {
                 node.own_files += 1;
                 node.own_bytes += e.allocated_bytes;
@@ -486,11 +504,14 @@ pub(crate) fn run_walks<R: Send>(
         .into_inner()
         .unwrap_or_default()
         .into_iter()
-        .map(|Reverse((bytes, logical_bytes, path))| LargeFile {
-            path: path.display().to_string(),
-            bytes,
-            logical_bytes,
-        })
+        .map(
+            |Reverse((bytes, logical_bytes, path, modified))| LargeFile {
+                path: path.display().to_string(),
+                bytes,
+                logical_bytes,
+                modified_ms: (modified > 0).then_some(modified),
+            },
+        )
         .collect();
     largest.sort_by_key(|f| Reverse((f.bytes, f.logical_bytes)));
     Ok((out, WalkExtras { largest, truncated }))
@@ -524,11 +545,14 @@ pub fn scan(root: &Path, opts: &ScanOptions, ctl: &ScanControl) -> Result<ScanTr
         .into_inner()
         .unwrap_or_default()
         .into_iter()
-        .map(|Reverse((bytes, logical_bytes, path))| LargeFile {
-            path: path.display().to_string(),
-            bytes,
-            logical_bytes,
-        })
+        .map(
+            |Reverse((bytes, logical_bytes, path, modified))| LargeFile {
+                path: path.display().to_string(),
+                bytes,
+                logical_bytes,
+                modified_ms: (modified > 0).then_some(modified),
+            },
+        )
         .collect();
     // Same order the heap keeps: allocated size, then logical size as tie-breaker.
     largest.sort_by_key(|f| Reverse((f.bytes, f.logical_bytes)));
@@ -577,11 +601,13 @@ pub(crate) fn flatten(w: Walked, parent: Option<NodeId>, nodes: &mut Vec<DirNode
         total_logical_bytes: w.own_logical,
         file_count: w.own_files,
         dir_count: 0,
+        own_newest_ms: w.own_newest_ms,
+        newest_ms: w.own_newest_ms,
         status: w.status,
     });
     for child in w.children {
         let cid = flatten(child, Some(id), nodes);
-        let (tb, tl, fc, dc, scanned) = {
+        let (tb, tl, fc, dc, scanned, cn) = {
             let c = &nodes[cid as usize];
             (
                 c.total_bytes,
@@ -589,6 +615,7 @@ pub(crate) fn flatten(w: Walked, parent: Option<NodeId>, nodes: &mut Vec<DirNode
                 c.file_count,
                 c.dir_count,
                 matches!(c.status, NodeStatus::Complete),
+                c.newest_ms,
             )
         };
         let n = &mut nodes[id as usize];
@@ -597,6 +624,7 @@ pub(crate) fn flatten(w: Walked, parent: Option<NodeId>, nodes: &mut Vec<DirNode
         n.total_logical_bytes += tl;
         n.file_count += fc;
         n.dir_count += dc + u64::from(scanned);
+        n.newest_ms = n.newest_ms.max(cn);
     }
     id
 }

@@ -19,6 +19,8 @@ fn node(name: &str, parent: Option<NodeId>, total: u64, own: u64, status: NodeSt
         total_logical_bytes: total,
         file_count: 1,
         dir_count: 0,
+        own_newest_ms: None,
+        newest_ms: None,
         status,
     }
 }
@@ -57,11 +59,13 @@ fn tree(root: &str, big: u64) -> ScanTree {
                 path: format!("{root}big\\inner\\a.bin"),
                 bytes: 60 * MB,
                 logical_bytes: 60 * MB,
+                modified_ms: Some(1_700_000_000_000),
             },
             LargeFile {
                 path: format!("{root}b.bin"),
                 bytes: 5 * MB,
                 logical_bytes: 5 * MB,
+                modified_ms: None,
             },
         ],
         stats: ScanStats {
@@ -188,7 +192,7 @@ fn file_database_persists_across_reopen() {
             .unwrap()
     };
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 4);
+    assert_eq!(s.schema_version().unwrap(), 5);
     assert_eq!(s.latest_scan().unwrap().unwrap().id, id);
 }
 
@@ -282,18 +286,24 @@ fn upgrades_a_version_1_database_in_place() {
         let conn = rusqlite::Connection::open(&path).unwrap();
         conn.execute_batch(
             "DROP TABLE project_searches; DROP TABLE audit_log; DROP TABLE scan_categories;
+             ALTER TABLE scan_nodes DROP COLUMN newest_ms;
+             ALTER TABLE scan_largest_files DROP COLUMN modified_ms;
              PRAGMA user_version = 1;",
         )
         .unwrap();
     }
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 4);
+    assert_eq!(s.schema_version().unwrap(), 5);
     assert_eq!(
         s.latest_scan().unwrap().unwrap().id,
         id,
         "existing data kept"
     );
     assert!(s.scan_categories(id).unwrap().is_empty());
+    // Rows from before change times were recorded read back as unknown, not as zero.
+    let root = s.node(id, 0).unwrap().unwrap();
+    assert_eq!(root.newest_ms, None);
+    assert_eq!(s.largest_files(id).unwrap()[0].modified_ms, None);
 }
 
 #[test]
@@ -606,4 +616,38 @@ fn saving_many_updates_in_a_row_keeps_the_history_that_was_already_there() {
         burst[13]
     );
     assert_eq!(store.scans_for_root("C:\\").unwrap().len(), 5);
+}
+
+#[test]
+fn change_times_roundtrip_and_unknown_stays_unknown() {
+    let mut store = Store::open_in_memory().unwrap();
+    let mut t = tree("C:\\", 80 * MB);
+    t.nodes[0].newest_ms = Some(1_700_000_500_000);
+    t.nodes[1].newest_ms = Some(1_700_000_400_000); // big
+    t.nodes[2].newest_ms = Some(1_600_000_000_000); // inner: a long time ago
+    t.nodes[3].newest_ms = None; // tiny, pruned
+    let id = store
+        .save_scan(&t, &[], 0, 10, Retention::default())
+        .unwrap();
+
+    let n = |names: &[&str]| {
+        let node = store.find_by_names(id, names).unwrap().unwrap();
+        store.node(id, node).unwrap().unwrap()
+    };
+    assert_eq!(n(&[]).newest_ms, Some(1_700_000_500_000));
+    assert_eq!(n(&["big"]).newest_ms, Some(1_700_000_400_000));
+    assert_eq!(n(&["big", "inner"]).newest_ms, Some(1_600_000_000_000));
+    // A folder with no known time is None, never 0 ("changed in 1970").
+    let link = n(&["link"]);
+    assert_eq!(link.newest_ms, None);
+
+    // The saved largest files keep their times too; one had none.
+    let files = store.largest_files(id).unwrap();
+    assert_eq!(files[0].modified_ms, Some(1_700_000_000_000));
+    assert_eq!(files[1].modified_ms, None);
+    assert_eq!(
+        store.all_nodes(id).unwrap().len(),
+        4,
+        "root, big, inner, link are stored"
+    );
 }

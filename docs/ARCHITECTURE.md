@@ -405,11 +405,28 @@ queries cover the folders the analysis stored (at or above its threshold) and ma
 total size, a case-insensitive path substring, and category (the same classifier as the
 folder listing, which inherits downward); file queries cover only the analysis's saved
 largest files, and say so. Matches can nest, so the result gives a *unique* byte total that
-counts each byte once. `StructuredQuery::describe()` renders any query in plain words. The
-one field that cannot be evaluated is `olderThanDays`: saved analyses record sizes, not
-modification times. It is returned in the result's `notApplied` list, to be shown
-before the results, never silently dropped. Exposed as `query_saved_analysis`; there is no UI
-for it yet.
+counts each byte once. `StructuredQuery::describe()` renders any query in plain words. `olderThanDays` is
+evaluated from recorded change times (below). Ages are measured as of when the analysis
+finished, not today, which keeps the answer deterministic; a later change is not known. An
+analysis saved before change times existed cannot apply the filter at all, and then the
+result says so in `notApplied` (shown before the results) and returns everything unfiltered
+rather than hiding or guessing; a folder with no recorded time (an empty one, say) is left
+out of an age-filtered answer and counted in a note, never called stale. Exposed as
+`query_saved_analysis`; there is no UI for it yet.
+
+**Change times** (scanner, store). Every directory records the newest modification time
+among its entries (`own_newest_ms`: files and subfolders directly inside, using each entry's
+time as the directory listing reports it) and among everything in its subtree
+(`newest_ms`); the largest files carry their own `modified_ms`. The store gained a
+migration (`newest_ms`, `modified_ms`; NULL for rows saved earlier, which read back as
+unknown, never as 1970), and the incremental rescan maintains the times (a refreshed
+folder takes its fresh own time, and subtree times are recomputed on rebuild). The
+incremental-equals-fresh test now includes times, which caught a real bug (a folder emptied
+by a deletion kept its old time). Measured platform behavior: NTFS updates a directory
+entry's copy of a file's times lazily, so a scan taken right after a write can see times
+about a millisecond older than a later scan (about half of back-to-back scans in a probe).
+That is irrelevant at the granularity of days but means times are compared with a tolerance
+in tests, not exactly.
 
 ### Implemented: Docker and WSL inspection (`sentinel-containers`)
 

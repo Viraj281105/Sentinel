@@ -93,6 +93,7 @@ fn to_walked(nodes: &[DirNode], id: usize) -> Walked {
         own_bytes: n.own_bytes,
         own_logical: n.total_logical_bytes.saturating_sub(cl),
         own_files: n.file_count.saturating_sub(cf),
+        own_newest_ms: n.own_newest_ms,
         status: n.status.clone(),
         children,
     }
@@ -210,6 +211,7 @@ pub fn rescan(
             node.own_bytes = fresh.own_bytes;
             node.own_logical = fresh.own_logical;
             node.own_files = fresh.own_files;
+            node.own_newest_ms = fresh.own_newest_ms;
             node.status = fresh.status;
             node.children = kept;
         }

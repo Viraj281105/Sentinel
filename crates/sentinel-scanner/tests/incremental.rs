@@ -73,7 +73,51 @@ fn shape(t: &ScanTree) -> BTreeMap<String, Row> {
     out
 }
 
+/// Change times by lower-cased relative path. NTFS updates a directory entry's copy of a
+/// file's times lazily, so a scan taken right after a write can see times about a
+/// millisecond older than a later scan (measured: about half of back-to-back scans).
+/// They are compared with a tolerance instead of exactly.
+fn times(t: &ScanTree) -> BTreeMap<String, (Option<i64>, Option<i64>)> {
+    fn go(
+        t: &ScanTree,
+        id: NodeId,
+        rel: String,
+        out: &mut BTreeMap<String, (Option<i64>, Option<i64>)>,
+    ) {
+        let n = &t.nodes[id as usize];
+        out.insert(rel.to_lowercase(), (n.own_newest_ms, n.newest_ms));
+        for &c in &n.children {
+            go(t, c, format!("{rel}\\{}", t.nodes[c as usize].name), out);
+        }
+    }
+    let mut out = BTreeMap::new();
+    go(t, ScanTree::ROOT, String::new(), &mut out);
+    out
+}
+
+fn assert_times_close(inc: &ScanTree, fresh: &ScanTree) {
+    let (a, b) = (times(inc), times(fresh));
+    assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
+    let close = |x: Option<i64>, y: Option<i64>| match (x, y) {
+        (None, None) => true,
+        (Some(x), Some(y)) => (x - y).abs() <= 100,
+        _ => false,
+    };
+    for (path, (ao, an)) in &a {
+        let (bo, bn) = b[path];
+        assert!(
+            close(*ao, bo),
+            "own newest differs at {path:?}: {ao:?} vs {bo:?}"
+        );
+        assert!(
+            close(*an, bn),
+            "subtree newest differs at {path:?}: {an:?} vs {bn:?}"
+        );
+    }
+}
+
 fn assert_same(inc: &ScanTree, fresh: &ScanTree) {
+    assert_times_close(inc, fresh);
     assert_eq!(shape(inc), shape(fresh), "tree differs from a fresh scan");
     assert_eq!(inc.stats.dirs, fresh.stats.dirs);
     assert_eq!(inc.stats.files, fresh.stats.files);

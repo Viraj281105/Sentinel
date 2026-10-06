@@ -155,6 +155,8 @@ fn node(name: &str, parent: Option<u32>, own: u64) -> DirNode {
         total_logical_bytes: 0,
         file_count: 0,
         dir_count: 0,
+        own_newest_ms: None,
+        newest_ms: None,
         status: NodeStatus::Complete,
     }
 }
@@ -224,12 +226,14 @@ fn large_files_are_moved_to_their_own_category() {
                 path: r"C:\pagefile.sys".into(),
                 bytes: 60,
                 logical_bytes: 60,
+                modified_ms: None,
             },
             // Same category as its folder: nothing moves.
             LargeFile {
                 path: r"C:\Windows\big.dat".into(),
                 bytes: 8,
                 logical_bytes: 8,
+                modified_ms: None,
             },
         ],
         stats: ScanStats::default(),

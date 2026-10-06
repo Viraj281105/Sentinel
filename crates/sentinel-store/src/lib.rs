@@ -127,6 +127,12 @@ CREATE TABLE project_searches (
     result         TEXT    NOT NULL
 ) WITHOUT ROWID;
 ",
+    // When things last changed, so "not changed for N days" can be answered. Rows saved
+    // before this migration keep NULL: their change times were never recorded.
+    r"
+ALTER TABLE scan_nodes ADD COLUMN newest_ms INTEGER;
+ALTER TABLE scan_largest_files ADD COLUMN modified_ms INTEGER;
+",
 ];
 
 /// How much of each scan to keep, and how many scans.
@@ -237,6 +243,9 @@ pub struct StoredNode {
     pub child_count: u64,
     pub pruned_children: u64,
     pub pruned_bytes: u64,
+    /// Newest modification time (Unix ms) of anything in this folder's subtree when it
+    /// was scanned. `None` for scans saved before change times were recorded.
+    pub newest_ms: Option<i64>,
     pub status: NodeStatus,
 }
 
@@ -377,8 +386,8 @@ impl Store {
         }
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO scan_largest_files (scan_id, rank, path, bytes, logical_bytes)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO scan_largest_files (scan_id, rank, path, bytes, logical_bytes, modified_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?;
             for (rank, f) in tree.largest_files.iter().enumerate() {
                 stmt.execute(params![
@@ -386,7 +395,8 @@ impl Store {
                     rank as i64,
                     f.path,
                     to_i(f.bytes),
-                    to_i(f.logical_bytes)
+                    to_i(f.logical_bytes),
+                    f.modified_ms
                 ])?;
             }
         }
@@ -469,7 +479,7 @@ impl Store {
     fn node_where(&self, clause: &str, p: impl rusqlite::Params) -> Result<Vec<StoredNode>> {
         let sql = format!(
             "SELECT node, parent, name, total_bytes, own_bytes, file_count, own_files,
-                    child_count, pruned_children, pruned_bytes, status
+                    child_count, pruned_children, pruned_bytes, status, newest_ms
              FROM scan_nodes {clause}"
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -486,6 +496,7 @@ impl Store {
                     child_count: to_u(r.get(7)?),
                     pruned_children: to_u(r.get(8)?),
                     pruned_bytes: to_u(r.get(9)?),
+                    newest_ms: r.get(11)?,
                     status: NodeStatus::Complete,
                 },
                 r.get::<_, String>(10)?,
@@ -656,7 +667,7 @@ impl Store {
 
     pub fn largest_files(&self, scan: ScanId) -> Result<Vec<LargeFile>> {
         let mut stmt = self.conn.prepare(
-            "SELECT path, bytes, logical_bytes FROM scan_largest_files
+            "SELECT path, bytes, logical_bytes, modified_ms FROM scan_largest_files
              WHERE scan_id = ?1 ORDER BY rank",
         )?;
         let rows = stmt.query_map([scan], |r| {
@@ -664,6 +675,7 @@ impl Store {
                 path: r.get(0)?,
                 bytes: to_u(r.get(1)?),
                 logical_bytes: to_u(r.get(2)?),
+                modified_ms: r.get(3)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -748,8 +760,9 @@ fn insert_nodes(tx: &Transaction<'_>, scan: ScanId, tree: &ScanTree, min: u64) -
     }
     let mut stmt = tx.prepare(
         "INSERT INTO scan_nodes (scan_id, node, parent, name, total_bytes, own_bytes,
-             file_count, own_files, child_count, pruned_children, pruned_bytes, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             file_count, own_files, child_count, pruned_children, pruned_bytes, status,
+             newest_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
     )?;
     let mut stored = 0usize;
     for (i, node) in tree.nodes.iter().enumerate() {
@@ -776,6 +789,7 @@ fn insert_nodes(tx: &Transaction<'_>, scan: ScanId, tree: &ScanTree, min: u64) -
             to_i(pruned[i].0),
             to_i(pruned[i].1),
             status,
+            node.newest_ms,
         ])?;
         stored += 1;
     }

@@ -5,4 +5,9 @@ export type QueryItem = { path: string, bytes: number,
 /**
  * Files in the folder (folders only).
  */
-files: number | null, classification: Classification | null, };
+files: number | null, 
+/**
+ * When anything in it last changed (a folder's newest entry, a file's own time), as
+ * of the analysis; `null` if not recorded.
+ */
+lastChangedMs: number | null, classification: Classification | null, };

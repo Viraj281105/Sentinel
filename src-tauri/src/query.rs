@@ -26,6 +26,8 @@ use ts_rs::TS;
 use crate::commands::error::{CommandError, ErrorKind};
 use crate::db::Db;
 
+const DAY_MS: i64 = 86_400_000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -44,6 +46,10 @@ pub struct QueryItem {
     /// Files in the folder (folders only).
     #[ts(type = "number | null")]
     pub files: Option<u64>,
+    /// When anything in it last changed (a folder's newest entry, a file's own time), as
+    /// of the analysis; `null` if not recorded.
+    #[ts(type = "number | null")]
+    pub last_changed_ms: Option<i64>,
     pub classification: Option<Classification>,
 }
 
@@ -136,28 +142,40 @@ pub(crate) fn run(
     })?;
 
     let mut not_applied = Vec::new();
-    if let Some(d) = q.older_than_days {
-        not_applied.push(NotApplied {
-            field: "olderThanDays".into(),
-            reason: format!(
-                "Saved analyses record sizes, not when folders were last changed, so \"not changed for {d} days\" could not be checked. The results below are not limited by age."
-            ),
-        });
-    }
     let mut notes = Vec::new();
     let min = q.min_bytes.unwrap_or(0);
+    let age_ms = q.older_than_days.map(|d| i64::from(d) * DAY_MS);
+    // Ages are measured as of when the analysis finished, which makes the answer
+    // deterministic (and, if anything, conservative: a later change is not known).
+    let reference = rec.finished_at_ms;
+    let mut unknown_age = 0u64;
 
-    // (path, bytes, files, node id, parent id) for every candidate, before sorting.
     struct Row {
         path: String,
         bytes: u64,
         files: Option<u64>,
+        changed: Option<i64>,
         id: Option<u32>,
         parent: Option<u32>,
         class: Option<Classification>,
     }
     let mut rows: Vec<Row> = Vec::new();
     let mut all_paths: HashMap<u32, (Option<u32>, bool)> = HashMap::new();
+
+    // The age filter needs recorded change times. Analyses saved before Sentinel recorded
+    // them have none, and then the filter cannot be applied at all.
+    let age_unavailable = |any_known: bool, what: &str, not_applied: &mut Vec<NotApplied>| {
+        if let Some(d) = q.older_than_days
+            && !any_known
+        {
+            not_applied.push(NotApplied {
+                field: "olderThanDays".into(),
+                reason: format!(
+                    "This analysis has no record of when {what} last changed (it was saved before Sentinel kept that), so \"not changed for {d} days\" could not be checked. The results are not limited by age. Analyze the drive again to enable it."
+                ),
+            });
+        }
+    };
 
     match q.target {
         Target::Folders => {
@@ -166,6 +184,9 @@ pub(crate) fn run(
                 rec.min_node_bytes
             ));
             let nodes = store.all_nodes(rec.id)?;
+            let any_known = nodes.iter().any(|n| n.newest_ms.is_some());
+            age_unavailable(any_known, "folders", &mut not_applied);
+            let apply_age = age_ms.filter(|_| any_known);
             // Parents always have smaller ids than their children, so one pass builds paths.
             let mut paths: HashMap<u32, PathBuf> = HashMap::new();
             for n in &nodes {
@@ -179,15 +200,26 @@ pub(crate) fn run(
                 }
                 let shown = path.display().to_string();
                 let class = classify(&path);
-                let ok = n.total_bytes >= min
+                let mut ok = n.total_bytes >= min
                     && matches_text(&shown, q.path_contains.as_deref())
                     && matches_category(class, &q.categories);
+                if ok && let Some(age) = apply_age {
+                    match n.newest_ms {
+                        Some(t) => ok = reference - t >= age,
+                        None => {
+                            // An empty folder has nothing to date; it is not claimed stale.
+                            unknown_age += 1;
+                            ok = false;
+                        }
+                    }
+                }
                 all_paths.insert(n.id, (n.parent, ok));
                 if ok {
                     rows.push(Row {
                         path: shown,
                         bytes: n.total_bytes,
                         files: Some(n.file_count),
+                        changed: n.newest_ms,
                         id: Some(n.id),
                         parent: n.parent,
                         class,
@@ -204,22 +236,47 @@ pub(crate) fn run(
                 "Only the largest files of each analysis are saved, so this searches those, not every file."
                     .to_owned(),
             );
-            for f in store.largest_files(rec.id)? {
+            let files = store.largest_files(rec.id)?;
+            let any_known = files.iter().any(|f| f.modified_ms.is_some());
+            age_unavailable(any_known, "files", &mut not_applied);
+            let apply_age = age_ms.filter(|_| any_known);
+            for f in files {
                 let class = classify(Path::new(&f.path));
-                if f.bytes >= min
+                let mut ok = f.bytes >= min
                     && matches_text(&f.path, q.path_contains.as_deref())
-                    && matches_category(class, &q.categories)
-                {
+                    && matches_category(class, &q.categories);
+                if ok && let Some(age) = apply_age {
+                    match f.modified_ms {
+                        Some(t) => ok = reference - t >= age,
+                        None => {
+                            unknown_age += 1;
+                            ok = false;
+                        }
+                    }
+                }
+                if ok {
                     rows.push(Row {
                         path: f.path,
                         bytes: f.bytes,
                         files: None,
+                        changed: f.modified_ms,
                         id: None,
                         parent: None,
                         class,
                     });
                 }
             }
+        }
+    }
+    if q.older_than_days.is_some() && not_applied.is_empty() {
+        notes.push(
+            "Ages are measured as of when this analysis finished, not today: a change made since then is not known."
+                .to_owned(),
+        );
+        if unknown_age > 0 {
+            notes.push(format!(
+                "{unknown_age} item(s) had no recorded change time (for example empty folders) and were left out of the age filter."
+            ));
         }
     }
 
@@ -276,6 +333,7 @@ pub(crate) fn run(
                 path: r.path,
                 bytes: r.bytes,
                 files: r.files,
+                last_changed_ms: r.changed,
                 classification: r.class,
             })
             .collect(),
@@ -321,7 +379,13 @@ mod tests {
         let tree = scan(r, &ScanOptions::default(), &ScanControl::new()).unwrap();
         let id = db
             .lock()
-            .save_scan(&tree, &[], 1, 2, Retention::default())
+            .save_scan(
+                &tree,
+                &[],
+                crate::db::now_ms() - 5,
+                crate::db::now_ms(),
+                Retention::default(),
+            )
             .unwrap();
         (dir, db, id, Classifier::new(&HashMap::new()))
     }
@@ -467,27 +531,179 @@ mod tests {
         assert_eq!(r.target, ResultTarget::Files);
     }
 
+    use std::fs::OpenOptions;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::time::{Duration, SystemTime};
+
+    /// Set a file's or folder's modification time `days` into the past.
+    fn age(path: &Path, days: u64) {
+        OpenOptions::new()
+            .access_mode(0x0100) // FILE_WRITE_ATTRIBUTES
+            .custom_flags(0x0200_0000) // BACKUP_SEMANTICS: folders can be opened too
+            .open(path)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(days * 86_400))
+            .unwrap();
+    }
+
+    /// stale/{old.bin} aged 300 days, fresh/{new.bin}, mixed/{old2.bin aged, new2.bin}.
+    fn aged() -> (tempfile::TempDir, Db, ScanId, Classifier) {
+        let dir = tempfile::tempdir().unwrap();
+        let r = dir.path();
+        put(&r.join("stale").join("old.bin"), 2 * MB);
+        put(&r.join("fresh").join("new.bin"), 2 * MB);
+        put(&r.join("mixed").join("old2.bin"), 2 * MB);
+        put(&r.join("mixed").join("new2.bin"), 2 * MB);
+        // The file first, then the folder that holds it: folders carry their own times.
+        age(&r.join("stale").join("old.bin"), 300);
+        age(&r.join("stale"), 300);
+        age(&r.join("mixed").join("old2.bin"), 300);
+        let db = Db::in_memory();
+        let tree = scan(r, &ScanOptions::default(), &ScanControl::new()).unwrap();
+        let id = db
+            .lock()
+            .save_scan(
+                &tree,
+                &[],
+                crate::db::now_ms() - 5,
+                crate::db::now_ms(),
+                Retention::default(),
+            )
+            .unwrap();
+        (dir, db, id, Classifier::new(&HashMap::new()))
+    }
+
     #[test]
-    fn age_cannot_be_evaluated_so_it_is_reported_not_silently_dropped() {
-        let (_d, db, id, c) = saved();
-        let with = go(
+    fn older_than_uses_the_recorded_change_times() {
+        let (_d, db, id, c) = aged();
+        let r = go(
             &db,
             &c,
             Some(id),
             r#"{"target":"folders","olderThanDays":90}"#,
         )
         .unwrap();
-        let without = go(&db, &c, Some(id), r#"{"target":"folders"}"#).unwrap();
-        assert_eq!(with.not_applied.len(), 1);
-        assert_eq!(with.not_applied[0].field, "olderThanDays");
-        assert!(with.not_applied[0].reason.contains("not limited by age"));
-        assert_eq!(
-            names(&with),
-            names(&without),
-            "the other filters still apply"
+        assert!(r.not_applied.is_empty(), "{:?}", r.not_applied);
+        // Only `stale` is entirely old; `mixed` holds a recent file, `fresh` is recent.
+        assert_eq!(names(&r), ["stale"]);
+        let age_days = (r.finished_at_ms - r.items[0].last_changed_ms.unwrap()) / 86_400_000;
+        assert!((299..=301).contains(&age_days), "{age_days}");
+        assert!(
+            r.notes
+                .iter()
+                .any(|n| n.contains("as of when this analysis finished"))
         );
-        assert!(with.description.contains("not changed for 90 days or more"));
-        assert!(without.not_applied.is_empty());
+        assert!(r.description.contains("not changed for 90 days or more"));
+
+        // A threshold beyond every age matches nothing; one inside matches the same folder.
+        assert!(
+            go(
+                &db,
+                &c,
+                Some(id),
+                r#"{"target":"folders","olderThanDays":400}"#
+            )
+            .unwrap()
+            .items
+            .is_empty()
+        );
+        let inside = go(
+            &db,
+            &c,
+            Some(id),
+            r#"{"target":"folders","olderThanDays":299}"#,
+        )
+        .unwrap();
+        assert_eq!(names(&inside), ["stale"]);
+        // Without the age filter all three folders are there.
+        assert_eq!(
+            go(&db, &c, Some(id), r#"{"target":"folders"}"#)
+                .unwrap()
+                .matches,
+            3
+        );
+    }
+
+    #[test]
+    fn older_than_works_for_the_saved_largest_files_too() {
+        let (_d, db, id, c) = aged();
+        let r = go(
+            &db,
+            &c,
+            Some(id),
+            r#"{"target":"files","olderThanDays":90}"#,
+        )
+        .unwrap();
+        assert_eq!(names(&r).len(), 2, "the two aged files: {:?}", names(&r));
+        assert!(names(&r).iter().all(|n| n == "old.bin" || n == "old2.bin"));
+        assert!(r.items.iter().all(|i| i.last_changed_ms.is_some()));
+        assert!(r.not_applied.is_empty());
+    }
+
+    #[test]
+    fn an_analysis_saved_before_change_times_existed_cannot_apply_the_filter_and_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        put(&dir.path().join("a").join("f"), 2 * MB);
+        let db = Db::in_memory();
+        let mut tree = scan(dir.path(), &ScanOptions::default(), &ScanControl::new()).unwrap();
+        for n in &mut tree.nodes {
+            n.newest_ms = None; // as if saved before the migration
+        }
+        for f in &mut tree.largest_files {
+            f.modified_ms = None;
+        }
+        let id = db
+            .lock()
+            .save_scan(&tree, &[], 1, crate::db::now_ms(), Retention::default())
+            .unwrap();
+        let c = Classifier::new(&HashMap::new());
+        for target in ["folders", "files"] {
+            let q = format!(r#"{{"target":"{target}","olderThanDays":30}}"#);
+            let r = go(&db, &c, Some(id), &q).unwrap();
+            assert_eq!(r.not_applied.len(), 1, "{target}");
+            assert!(r.not_applied[0].reason.contains("Analyze the drive again"));
+            assert!(r.not_applied[0].reason.contains("not limited by age"));
+            assert_eq!(
+                r.items.len(),
+                1,
+                "everything is returned, flagged, not hidden"
+            );
+        }
+    }
+
+    #[test]
+    fn folders_with_no_recorded_time_are_left_out_not_called_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        put(&dir.path().join("a").join("f"), 2 * MB);
+        put(&dir.path().join("b").join("f"), 2 * MB);
+        age(&dir.path().join("a").join("f"), 200);
+        age(&dir.path().join("a"), 200);
+        let db = Db::in_memory();
+        let mut tree = scan(dir.path(), &ScanOptions::default(), &ScanControl::new()).unwrap();
+        // One folder lacks a time, the other has one.
+        let b = tree.nodes.iter().position(|n| n.name == "b").unwrap();
+        tree.nodes[b].newest_ms = None;
+        let id = db
+            .lock()
+            .save_scan(&tree, &[], 1, crate::db::now_ms(), Retention::default())
+            .unwrap();
+        let c = Classifier::new(&HashMap::new());
+        let r = go(
+            &db,
+            &c,
+            Some(id),
+            r#"{"target":"folders","olderThanDays":90}"#,
+        )
+        .unwrap();
+        assert_eq!(names(&r), ["a"]);
+        assert!(r.not_applied.is_empty());
+        assert!(
+            r.notes
+                .iter()
+                .any(|n| n.contains("no recorded change time")),
+            "{:?}",
+            r.notes
+        );
     }
 
     #[test]

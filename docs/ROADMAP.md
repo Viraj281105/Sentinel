@@ -74,7 +74,8 @@ Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth hist
 Decisions recorded in docs/AI_POLICY.md (made 2026-10-06 under the maintainer's instruction to decide without asking): local models only, off by default, redaction always, no filesystem-derived text in prompts yet, output validated and never executed.
 
 1. ✅ `sentinel-ai` crate: `AiProvider`, loopback-only Ollama provider (no TLS, no proxy, no redirects), allow-list redactor, strict structured-query schema, and the translation pipeline. 24 tests, including a no-leak property over realistic text and a real local HTTP server
-2. ✅ Query execution: a validated `StructuredQuery` runs read-only and deterministically against a saved analysis (folders by size, path text and category with nested matches counted once; files from the saved largest-files list). Re-validated at the single entry point, so a model's answer and a person's form are treated alike. `olderThanDays` cannot be evaluated because saved analyses record no modification times, and is reported as not applied rather than ignored
+2. ✅ Query execution: a validated `StructuredQuery` runs read-only and deterministically against a saved analysis (folders by size, path text and category with nested matches counted once; files from the saved largest-files list). Re-validated at the single entry point, so a model's answer and a person's form are treated alike. `olderThanDays` is evaluated from recorded change times (item 3)
+3. ✅ Change times recorded per folder and per large file (scanner, incremental rescan, store migration); `olderThanDays` now works, as of the analysis date, and says so when an older analysis lacks times
 
 ## Phase 9 – Planner & recommendations ⬜
 Deterministic "recover N GB" planner with risk ceiling; explainability panel.
@@ -90,13 +91,12 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 8, next, in this order: (1) record each folder's newest-change time in the scanner,
-the incremental rescan and the store (a migration), so `olderThanDays` can be honored and
-"stale folders" becomes answerable; (2) the settings toggle, a Tauri command that runs
-`translate` and then the query, and the question box, showing a visible "AI answered this"
-label, the exact redacted text sent, and the plain-words description of the query before its
-results. Also still open from Phase 7: persist scan trees across restarts and the startup
-USN-journal check.
+Phase 8, next: the settings toggle, a Tauri command that runs `translate` and then the
+query, and the question box, showing a visible "AI answered this" label, the exact redacted
+text sent, and the plain-words description of the query before its results. Also still open
+from Phase 7: persist scan trees across restarts and the startup USN-journal check. A
+useful small follow-up now that times exist: a "stale folders" view built on the same
+query, with no AI involved.
 
 ## Completed first milestone (historical)
 
