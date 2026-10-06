@@ -68,8 +68,12 @@ Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth hist
 
 6. ✅ Analysis thinning: scans are thinned as they age (newest three always, one per day for two weeks, one per week beyond, incomplete old ones dropped, hard ceiling of 30 per root) so frequent updates cannot use up the history; about four months of history fit in the ceiling
 
-## Phase 8 – AI abstraction ⬜
-`AiProvider` trait, Ollama + OpenAI-compatible, redaction layer, schema validation, NL → structured query.
+## Phase 8 – AI abstraction 🔄
+`AiProvider` trait, redaction layer, schema validation, NL → structured query. Local models only.
+
+Decisions recorded in docs/AI_POLICY.md (made 2026-10-06 under the maintainer's instruction to decide without asking): local models only, off by default, redaction always, no filesystem-derived text in prompts yet, output validated and never executed.
+
+1. ✅ `sentinel-ai` crate: `AiProvider`, loopback-only Ollama provider (no TLS, no proxy, no redirects), allow-list redactor, strict structured-query schema, and the translation pipeline. 24 tests, including a no-leak property over realistic text and a real local HTTP server
 
 ## Phase 9 – Planner & recommendations ⬜
 Deterministic "recover N GB" planner with risk ceiling; explainability panel.
@@ -85,11 +89,11 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Two small Phase 7 follow-ups remain: persist scan trees across restarts, and the startup
-USN-journal check. Then Phase 8 (AI abstraction) starts with maintainer decisions that code
-cannot settle: which providers are allowed (local Ollama only, or also OpenAI-compatible
-endpoints), what may leave the machine, and how the redaction layer is verified. Nothing in
-Phases 5 to 7 sends data anywhere.
+Phase 8, next: execute a validated `StructuredQuery` against saved analyses (read-only,
+deterministic, no model involved), then a settings toggle and a Tauri command so the
+question box can exist, with a visible "AI answered this" label and the exact redacted
+text shown. Also still open from Phase 7: persist scan trees across restarts and the
+startup USN-journal check.
 
 ## Completed first milestone (historical)
 

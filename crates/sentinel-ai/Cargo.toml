@@ -1,0 +1,19 @@
+[package]
+name = "sentinel-ai"
+description = "Local-only AI abstraction: provider trait, redaction, strict query schema"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+# No TLS feature on purpose: only plain-HTTP loopback endpoints can work (docs/AI_POLICY.md).
+ureq = { version = "3", default-features = false, features = ["json"] }

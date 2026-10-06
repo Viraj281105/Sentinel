@@ -379,6 +379,23 @@ analyses with different thresholds, or any incomplete analysis, are flagged or r
 (a full list cannot show absence, so a file must exceed its smallest entry). The result
 describes changes in allocated size between two moments, never why, and offers no cleanup.
 
+### Implemented: AI abstraction (`sentinel-ai`, docs/AI_POLICY.md)
+
+Local-only, off by default, no UI yet. `AiProvider` is a blocking trait (text in, text out;
+no tools, no files). The one provider, `OllamaProvider`, accepts only a literal loopback
+`http://` base URL and is built without TLS, proxy or redirects. `Redactor` removes secrets,
+e-mails, non-loopback IPv4 addresses, SIDs and the account and computer names, and rewrites
+Windows and UNC paths with an allow-list of generic component names (everything else
+becomes a stable, reversible placeholder; files keep only their extension); it is
+idempotent and fails closed. `parse_query` accepts a model's answer only as exactly one JSON
+object (one code fence tolerated) with known fields (`deny_unknown_fields`), ranges
+enforced and categories from the fixed vocabulary; nothing is repaired. `translate` joins
+them for natural-language-to-query: the model sees only the redacted question and a fixed
+format description, and the validated query is read-only filtering that nothing executes
+yet. Not done: executing a query against saved analyses, a settings toggle, a Tauri
+command, and any UI; any feature that puts filesystem-derived text in a prompt needs the
+send-preview and injection review in the policy first.
+
 ### Implemented: Docker and WSL inspection (`sentinel-containers`)
 
 Read-only. Docker is asked through `docker.exe` with a closed set of commands
