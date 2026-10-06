@@ -10,6 +10,7 @@ mod commands;
 mod db;
 mod history;
 mod logging;
+mod query;
 mod scans;
 
 use std::path::PathBuf;
@@ -74,6 +75,7 @@ pub fn run() {
             commands::history::growth_history,
             commands::history::folder_history,
             commands::history::anomaly_report,
+            commands::query::query_saved_analysis,
             commands::scan::scan_listing,
             commands::scan::scan_largest_files,
             commands::cleanup::cleanup_providers,

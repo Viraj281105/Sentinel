@@ -12,6 +12,7 @@ pub(crate) mod error;
 pub(crate) mod history;
 pub(crate) mod projects;
 pub(crate) mod quarantine;
+pub(crate) mod query;
 pub(crate) mod safety;
 pub(crate) mod scan;
 pub(crate) mod software;

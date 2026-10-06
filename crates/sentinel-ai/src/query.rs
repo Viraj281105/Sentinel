@@ -44,6 +44,53 @@ pub struct StructuredQuery {
     pub limit: u32,
 }
 
+fn bytes_text(b: u64) -> String {
+    const UNITS: [&str; 6] = ["bytes", "KB", "MB", "GB", "TB", "PB"];
+    let (mut v, mut u) = (b as f64, 0);
+    while v >= 1024.0 && u < UNITS.len() - 1 {
+        v /= 1024.0;
+        u += 1;
+    }
+    if u == 0 {
+        format!("{b} bytes")
+    } else {
+        format!("{v:.1} {}", UNITS[u])
+    }
+}
+
+impl StructuredQuery {
+    /// The query in plain words, for showing a person exactly what is being asked,
+    /// whoever (or whatever) wrote it.
+    pub fn describe(&self) -> String {
+        let mut parts = vec![match self.target {
+            Target::Folders => "Folders".to_owned(),
+            Target::Files => "Files".to_owned(),
+        }];
+        if !self.categories.is_empty() {
+            parts.push(format!("in the categories {}", self.categories.join(", ")));
+        }
+        if let Some(p) = &self.path_contains {
+            parts.push(format!("whose path contains \"{p}\""));
+        }
+        if let Some(b) = self.min_bytes {
+            parts.push(format!("of at least {}", bytes_text(b)));
+        }
+        if let Some(d) = self.older_than_days {
+            parts.push(format!("not changed for {d} days or more"));
+        }
+        parts.push(
+            match self.sort {
+                Sort::SizeDesc => "largest first",
+                Sort::SizeAsc => "smallest first",
+                Sort::Name => "by name",
+            }
+            .to_owned(),
+        );
+        parts.push(format!("up to {}", self.limit));
+        parts.join(", ")
+    }
+}
+
 /// What the model may name. Built from the application's own category list.
 #[derive(Debug, Clone)]
 pub struct QueryVocabulary {
@@ -190,6 +237,21 @@ mod tests {
             (q.min_bytes, q.older_than_days, q.sort, q.limit),
             (Some(1 << 30), Some(90), Sort::SizeAsc, 5)
         );
+    }
+
+    #[test]
+    fn describes_a_query_in_plain_words() {
+        let q = parse_query(
+            r#"{"target":"folders","categories":["windows"],"pathContains":"cache","minBytes":1073741824,"olderThanDays":90,"sort":"name","limit":5}"#,
+            &vocab(),
+        )
+        .unwrap();
+        assert_eq!(
+            q.describe(),
+            "Folders, in the categories windows, whose path contains \"cache\", of at least 1.0 GB, not changed for 90 days or more, by name, up to 5"
+        );
+        let q = parse_query(r#"{"target":"files"}"#, &vocab()).unwrap();
+        assert_eq!(q.describe(), "Files, largest first, up to 20");
     }
 
     #[test]

@@ -2844,6 +2844,7 @@ dependencies = [
 name = "sentinel-app"
 version = "0.1.0"
 dependencies = [
+ "sentinel-ai",
  "sentinel-classify",
  "sentinel-cleanup",
  "sentinel-containers",

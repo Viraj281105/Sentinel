@@ -567,6 +567,12 @@ impl Store {
         Ok(Some(cur))
     }
 
+    /// Every stored folder of a scan (the root first). Folders smaller than the scan's
+    /// threshold were never stored, so they are not here.
+    pub fn all_nodes(&self, scan: ScanId) -> Result<Vec<StoredNode>> {
+        self.node_where("WHERE scan_id = ?1 ORDER BY node", params![scan])
+    }
+
     /// Every saved scan of `root`, oldest first.
     pub fn scans_for_root(&self, root: &str) -> Result<Vec<ScanRecord>> {
         let mut stmt = self

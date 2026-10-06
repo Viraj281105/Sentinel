@@ -396,6 +396,21 @@ yet. Not done: executing a query against saved analyses, a settings toggle, a Ta
 command, and any UI; any feature that puts filesystem-derived text in a prompt needs the
 send-preview and injection review in the policy first.
 
+### Implemented: query execution (`query.rs`)
+
+`run_json(db, classify, scan_id, query_json)` validates the query with `sentinel_ai::parse_query`
+(so a model's answer and a person's form share one choke point) and runs it against a saved
+analysis, the latest by default. Read-only and deterministic; no model is involved. Folder
+queries cover the folders the analysis stored (at or above its threshold) and match on
+total size, a case-insensitive path substring, and category (the same classifier as the
+folder listing, which inherits downward); file queries cover only the analysis's saved
+largest files, and say so. Matches can nest, so the result gives a *unique* byte total that
+counts each byte once. `StructuredQuery::describe()` renders any query in plain words. The
+one field that cannot be evaluated is `olderThanDays`: saved analyses record sizes, not
+modification times. It is returned in the result's `notApplied` list, to be shown
+before the results, never silently dropped. Exposed as `query_saved_analysis`; there is no UI
+for it yet.
+
 ### Implemented: Docker and WSL inspection (`sentinel-containers`)
 
 Read-only. Docker is asked through `docker.exe` with a closed set of commands
