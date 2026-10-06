@@ -55,7 +55,7 @@ Read-only inspection first (this machine has Docker 29.x and two WSL2 distros). 
 1. ✅ Docker (through the CLI, fixed read-only commands) and WSL (registry + disk file sizes) on the Containers page. Verified against the live engine: 3 images (6.2 GB), 2 volumes, 23 build-cache entries (5.6 GB); WSL disks: docker-desktop 20.9 GB (data disk 19.8 GB), Ubuntu 2.6 GB. Docker is never started by Sentinel
 2. ✅ Docker cleanup *preview*: what each prune command would remove, Docker's own reclaimable estimate beside the listed items, risk levels, the command shown for you to run yourself. Nothing is executed. Real engine: images 6.2 GB reclaimable, 51 MB of volumes, build cache 5.6 GB listed but 0 B reclaimable (all shared with images)
 
-## Phase 7 – Monitoring 🔄
+## Phase 7 – Monitoring ✅
 Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth history, anomaly attribution.
 
 1. ✅ Spike (docs/spikes/PHASE7_CHANGE_TRACKING.md): unelevated, the USN journal's metadata is readable but its records are not; `ReadDirectoryChangesW` lost no events with a fast reader and lost whole intervals when the reader stalled. Decision: watch with `ReadDirectoryChangesW` as a dirty-directory hint, rescan on overflow, and use the journal position to skip unchanged volumes
@@ -63,6 +63,8 @@ Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth hist
 3. ✅ App wiring: watcher starts with each analysis, the Storage page shows how many folders changed and offers Update (incremental when reliable, otherwise a full analysis); never rescans by itself. The last tree is retained in memory up to 400,000 nodes
 
 4. ✅ Growth history: the drive's size across analyses with a first-to-last summary and category changes, and one folder's size by path (known, below the storage threshold, or absent). Partial analyses excluded from trends; the span and the ten-analysis limit are stated
+
+5. ✅ Anomaly attribution: what grew or shrank most since the previous complete analysis, traced down to the responsible folders with a driver and share of the net change, the unattributed remainder stated, small-in-baseline growth marked as a lower bound, and new or bigger large files listed only where certain
 
 ## Phase 8 – AI abstraction ⬜
 `AiProvider` trait, Ollama + OpenAI-compatible, redaction layer, schema validation, NL → structured query.
@@ -81,10 +83,12 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 7, next: anomaly attribution ("what grew most since the last analysis", drilling
-from the drive down to the folders and files responsible, using the same path-based
-comparison). Recorded follow-ups: thin saved analyses so frequent updates do not use up
-the ten kept per root; persist trees across restarts; the startup USN-journal check.
+Phase 7 follow-ups, small and concrete: thin saved analyses so frequent updates do not use
+up the ten kept per root; persist trees across restarts; the startup USN-journal check.
+Then Phase 8 (AI abstraction) starts with maintainer decisions that code cannot settle:
+which providers are allowed (local Ollama only, or also OpenAI-compatible endpoints), what
+may leave the machine, and how the redaction layer is verified. Nothing in Phases 5 to 7
+sends data anywhere.
 
 ## Completed first milestone (historical)
 

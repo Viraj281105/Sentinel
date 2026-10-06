@@ -168,6 +168,8 @@ function mockBackend(status: ScanStatus = { running: null, last: null }, trends:
           return trends;
         case "scan_status":
           return status;
+        case "anomaly_report":
+          throw { kind: "notFound", message: "There is no earlier complete analysis of this drive to compare with." };
         case "growth_history":
           return { root: "C:\\", points: [], summary: null, categoryChanges: [], keptAnalyses: 10 };
         case "folder_history":

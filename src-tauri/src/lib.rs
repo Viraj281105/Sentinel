@@ -4,6 +4,7 @@
 //! application state and exposes typed IPC commands. Business logic lives in the
 //! `sentinel-*` crates.
 
+mod anomaly;
 mod audit;
 mod commands;
 mod db;
@@ -72,6 +73,7 @@ pub fn run() {
             commands::scan::watch_status,
             commands::history::growth_history,
             commands::history::folder_history,
+            commands::history::anomaly_report,
             commands::scan::scan_listing,
             commands::scan::scan_largest_files,
             commands::cleanup::cleanup_providers,

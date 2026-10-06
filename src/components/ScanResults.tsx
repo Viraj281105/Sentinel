@@ -8,6 +8,7 @@ import type { NodeStatus } from "../bindings/NodeStatus";
 import type { SavedScan } from "../bindings/SavedScan";
 import type { ScanProgressEvent } from "../bindings/ScanProgressEvent";
 import { CATEGORY } from "../lib/categories";
+import { AnomalyPanel } from "./AnomalyPanel";
 import { FolderHistory, GrowthHistory } from "./GrowthHistory";
 import { formatBytes, formatDateTime, formatDelta, percent } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
@@ -379,6 +380,9 @@ export function ScanResults({ last }: { last: SavedScan }) {
       </Panel>
       <Panel title="Space by category">
         <CategoryBreakdown last={last} />
+      </Panel>
+      <Panel title="What changed most">
+        <AnomalyPanel scanId={last.scanId} />
       </Panel>
       <Panel title="How it has changed">
         <GrowthHistory scanId={last.scanId} />

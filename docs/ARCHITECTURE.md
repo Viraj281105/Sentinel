@@ -350,6 +350,24 @@ Known limit: because an incremental update is saved as an analysis, frequent upd
 the ten kept analyses and shorten the history's reach. Thinning (for example, replacing an
 analysis made within hours of the previous one) is a recorded follow-up, not done.
 
+### Implemented: anomaly attribution (`anomaly.rs`)
+
+`attribute(db, current, baseline, classify)` compares an analysis with a baseline (by
+default the newest *complete* earlier analysis of the same root) and explains the change.
+It descends from the root, comparing each folder with the same path in the baseline, and
+goes only into folders whose change is at least max(10 MiB, 5% of the root's net change).
+A folder where no child is individually responsible becomes a leaf, reported with its
+change, a *driver* (files directly inside, many small folders, several subfolders, or the
+whole folder) and its share of the net change. Descent is by magnitude, not sign, so growth
+in one place is not hidden by shrinkage in another; folders gone since the baseline are
+reported as removed. What the leaves do not account for is returned as `unattributedBytes`,
+not hidden. Honesty rules: a folder smaller than the baseline's storage threshold has no
+exact earlier size, so its growth is "at least" now minus that threshold and says so; two
+analyses with different thresholds, or any incomplete analysis, are flagged or refused;
+"new or bigger large file" is claimed only when the baseline's top-50 list makes it certain
+(a full list cannot show absence, so a file must exceed its smallest entry). The result
+describes changes in allocated size between two moments, never why, and offers no cleanup.
+
 ### Implemented: Docker and WSL inspection (`sentinel-containers`)
 
 Read-only. Docker is asked through `docker.exe` with a closed set of commands

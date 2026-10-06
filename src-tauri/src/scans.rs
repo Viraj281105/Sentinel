@@ -719,6 +719,11 @@ impl ScanManager {
         })
     }
 
+    /// What Sentinel knows about a path's kind, by the same rules as the folder listing.
+    pub(crate) fn classify(&self, path: &Path) -> Option<Classification> {
+        self.classifier.classify(path)
+    }
+
     pub(crate) fn largest_files(
         &self,
         scan_id: ScanId,
