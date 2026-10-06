@@ -293,6 +293,31 @@ that depend on it. Installs of Node.js, Python, Rust or Go that no stated requir
 needs are flagged, with the caveat that projects stating no version may still use them;
 Java, .NET and Android installs are never judged because their requirements are not parsed.
 
+### Implemented: folder watcher and incremental rescan (`sentinel-scanner`)
+
+`watch::Watcher` follows the Phase 7 spike's design. One recursive
+`ReadDirectoryChangesW` watch per root (512 KB buffer by default, 4 KB to 4 MB allowed),
+overlapped, with the first request issued inside `start()` so nothing that changes after
+`start` returns is missed (a first version issued it from the reader thread and lost
+changes made in that gap under load). The reader thread only waits for completions and
+hands raw bytes to a bounded queue; a worker folds them into a deduplicated set of
+directories whose direct contents changed. Events are hints: a path only means "something
+changed in this directory". Noisy folders (`Temp`, `node_modules`, `.git`, caches,
+`target`) coalesce into one dirty *subtree*. Anything lost (kernel overflow, full queue,
+more than 20,000 dirty directories, a broken watch) becomes `Changes::root_dirty`. The
+folder is opened with full sharing, so it can still be renamed or deleted while watched.
+
+`incremental::rescan(tree, changes, opts, ctl)` re-reads one level of each dirty
+directory (reusing untouched child subtrees, reading new subdirectories completely) and
+re-walks dirty subtrees, then rebuilds the arena and statistics. Tests assert the result
+equals a fresh scan after adds, edits, deletes, new and removed directories, a directory
+replaced by a file, and a noisy subtree. It refuses (`FullScanNeeded`) when events were
+lost, leaves the tree untouched on cancel, and reports
+`largest_files_may_be_incomplete` when files left the largest-files list and nothing known
+can replace them. Cost: the arena rebuild is linear in the tree's size; directory reads,
+which dominate a scan, are limited to the dirty set. Not yet wired into the app (scan
+scheduling, per-root lifecycle, persisting trees, startup journal check).
+
 ### Implemented: Docker and WSL inspection (`sentinel-containers`)
 
 Read-only. Docker is asked through `docker.exe` with a closed set of commands

@@ -102,11 +102,7 @@ fn noisy_folders_are_coalesced_into_one_subtree() {
     let c = collect_until(&w, |c| {
         c.dirty_subtrees.contains(&nm) && has(c, &r.join("proj"))
     });
-    assert_eq!(
-        c.dirty_subtrees.iter().filter(|s| **s == nm).count() > 0,
-        true,
-        "{c:?}"
-    );
+    assert!(c.dirty_subtrees.contains(&nm), "{c:?}");
     assert!(
         has(&c, &r.join("proj")),
         "the project folder itself changed too"

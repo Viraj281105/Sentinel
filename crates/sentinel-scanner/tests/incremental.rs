@@ -321,6 +321,12 @@ fn watcher_events_drive_the_rescan_to_a_correct_tree() {
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+    // Let any straggling events land before judging.
+    std::thread::sleep(Duration::from_millis(300));
+    let c = w.drain();
+    all.dirty_dirs.extend(c.dirty_dirs);
+    all.dirty_subtrees.extend(c.dirty_subtrees);
+    all.root_dirty |= c.root_dirty;
     assert!(!all.root_dirty, "{all:?}");
     rescan(&mut tree, &all, &opts(), &ScanControl::new()).unwrap();
     assert_same(&tree, &full(&r));

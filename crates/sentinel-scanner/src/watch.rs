@@ -29,12 +29,14 @@ use std::time::Duration;
 
 use windows::Win32::Foundation::{CloseHandle, ERROR_NOTIFY_ENUM_DIR, HANDLE};
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY, FILE_NOTIFY_CHANGE,
-    FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_NOTIFY_CHANGE_CREATION, FILE_NOTIFY_CHANGE_DIR_NAME,
-    FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_NOTIFY_CHANGE_SIZE,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, ReadDirectoryChangesW,
+    CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OVERLAPPED, FILE_LIST_DIRECTORY,
+    FILE_NOTIFY_CHANGE, FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_NOTIFY_CHANGE_CREATION,
+    FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE,
+    FILE_NOTIFY_CHANGE_SIZE, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    ReadDirectoryChangesW,
 };
-use windows::Win32::System::IO::CancelIoEx;
+use windows::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
+use windows::Win32::System::Threading::CreateEventW;
 use windows::core::PCWSTR;
 
 /// Folder names whose contents churn constantly and are rarely worth tracking one
@@ -155,10 +157,7 @@ const FILTER: FILE_NOTIFY_CHANGE = FILE_NOTIFY_CHANGE(
 pub(crate) fn parse_batch(bytes: &[u8]) -> Vec<(u32, String)> {
     let mut out = Vec::new();
     let mut off = 0usize;
-    loop {
-        let Some(head) = bytes.get(off..off + 12) else {
-            break;
-        };
+    while let Some(head) = bytes.get(off..off + 12) {
         let next = u32::from_le_bytes([head[0], head[1], head[2], head[3]]) as usize;
         let action = u32::from_le_bytes([head[4], head[5], head[6], head[7]]);
         let len = u32::from_le_bytes([head[8], head[9], head[10], head[11]]) as usize;
@@ -226,83 +225,144 @@ fn worker_loop(rx: &Receiver<Vec<u8>>, state: &Mutex<State>, root: &Path, opts: 
     }
 }
 
+/// One outstanding `ReadDirectoryChangesW` request and the memory the kernel writes to.
+///
+/// The request is issued by [`Watcher::start`] itself (overlapped), so the kernel starts
+/// buffering events *before* `start` returns; issuing it from the reader thread would
+/// lose anything that changes in the gap. The buffer and `OVERLAPPED` are boxed so their
+/// addresses stay fixed while a request is pending, even when this struct is moved.
+struct Pending {
+    handle: HANDLE,
+    event: HANDLE,
+    buf: Box<[u64]>,
+    ov: Box<OVERLAPPED>,
+    size: u32,
+}
+
+// SAFETY: the raw handles are plain kernel object ids, and the struct is moved to the
+// single reader thread after the first request; nothing else touches it afterwards.
+unsafe impl Send for Pending {}
+
+impl Pending {
+    fn new(handle: HANDLE, size: u32) -> io::Result<Self> {
+        // SAFETY: creates an unnamed manual-reset event; the handle is closed in `Drop`.
+        let event = unsafe { CreateEventW(None, true, false, PCWSTR::null()) }
+            .map_err(|e| io::Error::other(e.message()))?;
+        Ok(Self {
+            handle,
+            event,
+            // u64 elements keep the buffer aligned for FILE_NOTIFY_INFORMATION.
+            buf: vec![0u64; size as usize / 8].into_boxed_slice(),
+            ov: Box::new(OVERLAPPED {
+                hEvent: event,
+                ..OVERLAPPED::default()
+            }),
+            size,
+        })
+    }
+
+    /// Queue the next request. Must not be called while one is pending.
+    fn issue(&mut self) -> windows::core::Result<()> {
+        *self.ov = OVERLAPPED {
+            hEvent: self.event,
+            ..OVERLAPPED::default()
+        };
+        // SAFETY: `buf` and `ov` are boxed and live as long as `self`; the caller waits
+        // for (or cancels) the request before this struct is dropped or reissued.
+        unsafe {
+            ReadDirectoryChangesW(
+                self.handle,
+                self.buf.as_mut_ptr().cast::<c_void>(),
+                self.size,
+                true,
+                FILTER,
+                None,
+                Some(&mut *self.ov),
+                None,
+            )
+        }
+    }
+
+    /// Wait for the pending request; the number of bytes the kernel wrote.
+    fn finish(&mut self) -> windows::core::Result<u32> {
+        let mut got = 0u32;
+        // SAFETY: `ov` is the structure the pending request was issued with.
+        unsafe { GetOverlappedResult(self.handle, &*self.ov, &mut got, true) }?;
+        Ok(got)
+    }
+}
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        // SAFETY: the event was created in `new` and is closed once.
+        unsafe {
+            let _ = CloseHandle(self.event);
+        }
+    }
+}
+
 fn reader_loop(
-    raw: isize,
-    buffer_bytes: u32,
+    mut pending: Pending,
     stall: Duration,
     tx: &SyncSender<Vec<u8>>,
     state: &Mutex<State>,
     stopping: &AtomicBool,
 ) {
-    let handle = HANDLE(raw as *mut c_void);
-    let mut size = buffer_bytes;
-    // u64 elements keep the buffer aligned for FILE_NOTIFY_INFORMATION.
-    let mut buf = vec![0u64; size as usize / 8];
-    let mut first = true;
     loop {
-        if stopping.load(Ordering::SeqCst) {
-            return;
-        }
-        let mut got = 0u32;
-        // SAFETY: `buf` and `got` outlive this synchronous call; the handle stays open
-        // until the owner has cancelled the call and joined this thread.
-        let r = unsafe {
-            ReadDirectoryChangesW(
-                handle,
-                buf.as_mut_ptr().cast::<c_void>(),
-                size,
-                true,
-                FILTER,
-                Some(&mut got),
-                None,
-                None,
-            )
-        };
-        if let Err(e) = r {
-            if stopping.load(Ordering::SeqCst) {
-                return;
-            }
-            // Network paths refuse buffers over 64 KB: retry once with the smaller size.
-            if first && size > NETWORK_BUFFER {
-                size = NETWORK_BUFFER;
-                buf.truncate(size as usize / 8);
-                first = false;
-                continue;
-            }
-            let overflow = e.code() == ERROR_NOTIFY_ENUM_DIR.to_hresult();
-            if let Ok(mut s) = state.lock() {
-                s.root_dirty = true;
-                if overflow {
-                    s.overflows += 1;
-                } else {
-                    s.broken = Some(e.message());
+        match pending.finish() {
+            Err(e) => {
+                if stopping.load(Ordering::SeqCst) {
+                    return;
+                }
+                let overflow = e.code() == ERROR_NOTIFY_ENUM_DIR.to_hresult();
+                if let Ok(mut s) = state.lock() {
+                    s.root_dirty = true;
+                    if overflow {
+                        s.overflows += 1;
+                    } else {
+                        s.broken = Some(e.message());
+                    }
+                }
+                if !overflow {
+                    return;
                 }
             }
-            if overflow {
-                continue;
+            Ok(0) => {
+                // The kernel buffer overflowed: a whole interval of events is gone.
+                if let Ok(mut s) = state.lock() {
+                    s.overflows += 1;
+                    s.root_dirty = true;
+                }
             }
-            return;
-        }
-        first = false;
-        if got == 0 {
-            // The kernel buffer overflowed: a whole interval of events is gone.
-            if let Ok(mut s) = state.lock() {
-                s.overflows += 1;
-                s.root_dirty = true;
+            Ok(got) => {
+                // SAFETY: the kernel wrote `got` initialized bytes at the start of `buf`.
+                let bytes = unsafe {
+                    std::slice::from_raw_parts(pending.buf.as_ptr().cast::<u8>(), got as usize)
+                };
+                if tx.try_send(bytes.to_vec()).is_err()
+                    && let Ok(mut s) = state.lock()
+                {
+                    // The consumer fell behind: treat it like an overflow, keep reading.
+                    s.dropped += 1;
+                    s.root_dirty = true;
+                }
             }
-            continue;
-        }
-        // SAFETY: the kernel wrote `got` initialized bytes at the start of `buf`.
-        let bytes = unsafe { std::slice::from_raw_parts(buf.as_ptr().cast::<u8>(), got as usize) };
-        if tx.try_send(bytes.to_vec()).is_err()
-            && let Ok(mut s) = state.lock()
-        {
-            // The consumer fell behind: treat it like an overflow, and keep reading.
-            s.dropped += 1;
-            s.root_dirty = true;
         }
         if !stall.is_zero() {
             thread::sleep(stall);
+        }
+        if stopping.load(Ordering::SeqCst) {
+            return;
+        }
+        // Events that happen before this call are kept: the kernel buffer persists.
+        if let Err(e) = pending.issue() {
+            if !stopping.load(Ordering::SeqCst)
+                && let Ok(mut s) = state.lock()
+            {
+                s.root_dirty = true;
+                s.broken = Some(e.message());
+            }
+            return;
         }
     }
 }
@@ -325,7 +385,7 @@ impl Watcher {
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 None,
                 OPEN_EXISTING,
-                FILE_FLAG_BACKUP_SEMANTICS,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
                 None,
             )
         }
@@ -337,11 +397,32 @@ impl Watcher {
         let buffer = opts.buffer_bytes.clamp(MIN_BUFFER, MAX_BUFFER) & !7;
         let stall = opts.reader_stall;
 
+        // Issue the first request here, so nothing that happens after `start` returns can
+        // be missed. Network paths refuse buffers over 64 KB: retry once with that size.
+        let hnd = HANDLE(raw as *mut c_void);
+        let close_on_error = |e: io::Error| {
+            // SAFETY: the handle was opened above and nothing else uses it yet.
+            unsafe {
+                let _ = CloseHandle(hnd);
+            }
+            e
+        };
+        let mut pending = Pending::new(hnd, buffer).map_err(close_on_error)?;
+        if let Err(first) = pending.issue() {
+            if buffer <= NETWORK_BUFFER {
+                return Err(close_on_error(io::Error::other(first.message())));
+            }
+            pending = Pending::new(hnd, NETWORK_BUFFER).map_err(close_on_error)?;
+            pending
+                .issue()
+                .map_err(|e| close_on_error(io::Error::other(e.message())))?;
+        }
+
         let reader = {
             let (state, stopping) = (state.clone(), stopping.clone());
             thread::Builder::new()
                 .name("sentinel-watch-read".into())
-                .spawn(move || reader_loop(raw, buffer, stall, &tx, &state, &stopping))?
+                .spawn(move || reader_loop(pending, stall, &tx, &state, &stopping))?
         };
         let worker = {
             let (state, root, opts) = (state.clone(), root.to_path_buf(), opts.clone());
