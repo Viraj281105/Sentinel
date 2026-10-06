@@ -177,6 +177,28 @@ pub struct StoredNode {
     pub status: NodeStatus,
 }
 
+/// A folder's size in one saved scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderSize {
+    /// Stored: this many allocated bytes.
+    Known(u64),
+    /// Not stored individually because it was smaller than the scan's folder threshold:
+    /// its size was somewhere below `max_bytes`.
+    BelowThreshold { max_bytes: u64 },
+    /// The scan shows no such folder (it did not exist, or a parent was not scanned).
+    Missing,
+}
+
+/// One point of a folder's history: its size in one scan of the root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FolderPoint {
+    pub scan_id: ScanId,
+    pub finished_at_ms: i64,
+    /// The scan was cancelled or hit a limit, so its totals are a lower bound.
+    pub partial: bool,
+    pub size: FolderSize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DriveSnapshot {
     pub taken_at_ms: i64,
@@ -468,6 +490,76 @@ impl Store {
             }
         }
         Ok(Some(cur))
+    }
+
+    /// Every saved scan of `root`, oldest first.
+    pub fn scans_for_root(&self, root: &str) -> Result<Vec<ScanRecord>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM scans WHERE root = ?1 ORDER BY finished_at_ms, id")?;
+        let ids: Vec<ScanId> = stmt
+            .query_map([root], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(rec) = self.scan(id)? {
+                out.push(rec);
+            }
+        }
+        Ok(out)
+    }
+
+    /// The size of the folder reached from `root` by following `names`, in every saved
+    /// scan of that root, oldest first. An empty `names` is the root itself.
+    pub fn folder_history(&self, root: &str, names: &[&str]) -> Result<Vec<FolderPoint>> {
+        let mut out = Vec::new();
+        for rec in self.scans_for_root(root)? {
+            let mut cur: Option<StoredNode> = self.node(rec.id, 0)?;
+            let mut size = FolderSize::Missing;
+            if cur.is_some() {
+                size = FolderSize::Known(cur.as_ref().map_or(0, |n| n.total_bytes));
+                for name in names {
+                    let parent = cur.take();
+                    let next = match &parent {
+                        Some(p) => self.child_named(rec.id, p.id, name)?,
+                        None => None,
+                    };
+                    match next {
+                        Some(n) => {
+                            size = FolderSize::Known(n.total_bytes);
+                            cur = Some(n);
+                        }
+                        None => {
+                            // Dropped for being small, or really not there.
+                            size = if parent.is_some_and(|p| p.pruned_children > 0) {
+                                FolderSize::BelowThreshold {
+                                    max_bytes: rec.min_node_bytes,
+                                }
+                            } else {
+                                FolderSize::Missing
+                            };
+                            break;
+                        }
+                    }
+                }
+            }
+            out.push(FolderPoint {
+                scan_id: rec.id,
+                finished_at_ms: rec.finished_at_ms,
+                partial: rec.stats.cancelled || rec.stats.truncated,
+                size,
+            });
+        }
+        Ok(out)
+    }
+
+    fn child_named(&self, scan: ScanId, parent: NodeId, name: &str) -> Result<Option<StoredNode>> {
+        Ok(self
+            .node_where(
+                "WHERE scan_id = ?1 AND parent = ?2 AND name = ?3",
+                params![scan, parent, name],
+            )?
+            .pop())
     }
 
     /// Per-category byte totals saved with a scan, largest first. Empty for scans saved

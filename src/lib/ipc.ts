@@ -10,6 +10,8 @@ import type { DependencyGraph } from "../bindings/DependencyGraph";
 import type { DockerOverview } from "../bindings/DockerOverview";
 import type { Drive } from "../bindings/Drive";
 import type { DriveTrend } from "../bindings/DriveTrend";
+import type { FolderHistory } from "../bindings/FolderHistory";
+import type { GrowthHistory } from "../bindings/GrowthHistory";
 import type { JvmAnalysis } from "../bindings/JvmAnalysis";
 import type { LargeFileView } from "../bindings/LargeFileView";
 import type { ManifestEntry } from "../bindings/ManifestEntry";
@@ -31,6 +33,8 @@ export const ipc = {
   listDrives: () => invoke<Drive[]>("list_drives"),
   driveTrends: () => invoke<DriveTrend[]>("drive_trends"),
   startScan: (root: string) => invoke<number>("start_scan", { root }),
+  growthHistory: (scanId?: number) => invoke<GrowthHistory>("growth_history", { scanId }),
+  folderHistory: (scanId: number, node: number) => invoke<FolderHistory>("folder_history", { scanId, node }),
   updateScan: () => invoke<number>("update_scan"),
   watchStatus: () => invoke<WatchStatus>("watch_status"),
   cancelScan: (id: number) => invoke<boolean>("cancel_scan", { id }),

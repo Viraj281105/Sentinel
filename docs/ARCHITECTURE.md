@@ -332,6 +332,24 @@ tree is gone and earlier changes are unknown, so the first update is a full anal
 the banner says changes before watching began are not known. Not done: persisting trees,
 and the startup check of the unelevated USN journal position.
 
+### Implemented: growth history (`history.rs`, `sentinel-store`)
+
+Built entirely from the saved analyses of a root; nothing new is collected. The store
+gained `scans_for_root` and `folder_history`, which follows a folder across analyses *by
+path* and distinguishes three cases per analysis: its size (`Known`), "smaller than the
+scan's folder threshold, so not stored" (`BelowThreshold`), and not there (`Missing`).
+`growth_history` returns the root's size per analysis, a first-to-last summary and the
+per-category change; `folder_history` does the same for one folder. Rules: cancelled or
+truncated analyses are shown but excluded from every trend; a per-day rate is given only
+when the span is at least six hours and no forecast is ever made; a summary needs two
+complete analyses; category changes need both ends to have been classified. The UI states
+the real span and that only the last ten analyses per root are kept, and its sparkline
+prints its range because the scale does not start at zero.
+
+Known limit: because an incremental update is saved as an analysis, frequent updates use up
+the ten kept analyses and shorten the history's reach. Thinning (for example, replacing an
+analysis made within hours of the previous one) is a recorded follow-up, not done.
+
 ### Implemented: Docker and WSL inspection (`sentinel-containers`)
 
 Read-only. Docker is asked through `docker.exe` with a closed set of commands

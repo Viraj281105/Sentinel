@@ -62,6 +62,8 @@ Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth hist
 2. ✅ Folder watcher and incremental rescan in `sentinel-scanner` (crate level): overlapped watch with the first request issued before `start` returns, reader that only enqueues, dirty-directory set with noisy-folder coalescing, overflow and loss collapse to `root_dirty`; incremental rescan verified equal to a fresh scan. Wired into the app (see 3)
 3. ✅ App wiring: watcher starts with each analysis, the Storage page shows how many folders changed and offers Update (incremental when reliable, otherwise a full analysis); never rescans by itself. The last tree is retained in memory up to 400,000 nodes
 
+4. ✅ Growth history: the drive's size across analyses with a first-to-last summary and category changes, and one folder's size by path (known, below the storage threshold, or absent). Partial analyses excluded from trends; the span and the ten-analysis limit are stated
+
 ## Phase 8 – AI abstraction ⬜
 `AiProvider` trait, Ollama + OpenAI-compatible, redaction layer, schema validation, NL → structured query.
 
@@ -79,9 +81,10 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 7, next: growth history (per-folder size over time from saved analyses) and anomaly
-attribution ("what grew since last week"). Deferred from the watcher work: persisting trees
-across restarts and the startup USN-journal check to skip unchanged volumes.
+Phase 7, next: anomaly attribution ("what grew most since the last analysis", drilling
+from the drive down to the folders and files responsible, using the same path-based
+comparison). Recorded follow-ups: thin saved analyses so frequent updates do not use up
+the ten kept per root; persist trees across restarts; the startup USN-journal check.
 
 ## Completed first milestone (historical)
 

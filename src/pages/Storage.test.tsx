@@ -168,6 +168,10 @@ function mockBackend(status: ScanStatus = { running: null, last: null }, trends:
           return trends;
         case "scan_status":
           return status;
+        case "growth_history":
+          return { root: "C:\\", points: [], summary: null, categoryChanges: [], keptAnalyses: 10 };
+        case "folder_history":
+          return { path: String.raw`C:\Users`, summary: null, points: [] };
         case "watch_status":
           throw new Error("no watcher in this test"); // the banner hides itself
         case "start_scan":
@@ -275,6 +279,18 @@ describe("Storage analysis", () => {
     render(<Storage />);
     expect(await screen.findByText(`Analysis of ${C}`)).toBeInTheDocument();
     expect(await screen.findByText("Users")).toBeInTheDocument();
+  });
+
+  it("loads a folder's history only when asked, and shows the drive's history panel", async () => {
+    const calls = mockBackend({ running: null, last: saved });
+    render(<Storage />);
+    expect(await screen.findByText("How it has changed")).toBeInTheDocument();
+    expect(await screen.findByText(/History appears after a second analysis/)).toBeInTheDocument();
+    expect(calls.some((c) => c.cmd === "folder_history")).toBe(false);
+    await userEvent.click(await screen.findByRole("button", { name: "Show history of this folder" }));
+    expect(await screen.findByRole("button", { name: "Hide history of this folder" })).toBeInTheDocument();
+    expect(calls.filter((c) => c.cmd === "folder_history")).toHaveLength(1);
+    expect(calls.find((c) => c.cmd === "folder_history")?.args).toEqual({ scanId: 7, node: 0 });
   });
 
   it("restores a scan that is already running when the page opens", async () => {

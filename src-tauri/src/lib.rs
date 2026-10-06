@@ -7,6 +7,7 @@
 mod audit;
 mod commands;
 mod db;
+mod history;
 mod logging;
 mod scans;
 
@@ -69,6 +70,8 @@ pub fn run() {
             commands::scan::scan_status,
             commands::scan::update_scan,
             commands::scan::watch_status,
+            commands::history::growth_history,
+            commands::history::folder_history,
             commands::scan::scan_listing,
             commands::scan::scan_largest_files,
             commands::cleanup::cleanup_providers,

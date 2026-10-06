@@ -8,6 +8,7 @@ import type { NodeStatus } from "../bindings/NodeStatus";
 import type { SavedScan } from "../bindings/SavedScan";
 import type { ScanProgressEvent } from "../bindings/ScanProgressEvent";
 import { CATEGORY } from "../lib/categories";
+import { FolderHistory, GrowthHistory } from "./GrowthHistory";
 import { formatBytes, formatDateTime, formatDelta, percent } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
 import { ErrorNote, Loading, Panel } from "./ui";
@@ -238,6 +239,7 @@ function FolderExplorer({ scanId }: { scanId: number }) {
   const [node, setNode] = useState(0);
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -286,6 +288,21 @@ function FolderExplorer({ scanId }: { scanId: number }) {
           )}
         </span>
       </nav>
+      <div className="mb-2">
+        <button
+          type="button"
+          aria-expanded={showHistory}
+          onClick={() => setShowHistory((v) => !v)}
+          className="text-xs text-emerald-700 hover:underline dark:text-emerald-400"
+        >
+          {showHistory ? "Hide history of this folder" : "Show history of this folder"}
+        </button>
+        {showHistory && (
+          <div className="mt-2">
+            <FolderHistory key={`${scanId}:${node}`} scanId={scanId} node={node} />
+          </div>
+        )}
+      </div>
       <ul>
         {listing.children.map((c) => (
           <Row
@@ -362,6 +379,9 @@ export function ScanResults({ last }: { last: SavedScan }) {
       </Panel>
       <Panel title="Space by category">
         <CategoryBreakdown last={last} />
+      </Panel>
+      <Panel title="How it has changed">
+        <GrowthHistory scanId={last.scanId} />
       </Panel>
       <Panel title="Largest folders">
         <FolderExplorer key={last.scanId} scanId={last.scanId} />

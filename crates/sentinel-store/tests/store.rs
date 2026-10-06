@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use sentinel_scanner::scan::{
     DirNode, LargeFile, LinkKind, NodeId, NodeStatus, ScanStats, ScanTree,
 };
-use sentinel_store::{DriveSnapshot, Retention, Store, StoreError};
+use sentinel_store::{DriveSnapshot, FolderSize, Retention, Store, StoreError};
 
 const MB: u64 = 1024 * 1024;
 
@@ -314,4 +314,72 @@ fn project_searches_are_replaced_per_root_and_removable() {
     assert!(s.remove_project_search(r"C:\SRC").unwrap());
     assert!(!s.remove_project_search(r"C:\src").unwrap());
     assert_eq!(s.project_searches().unwrap().len(), 1);
+}
+
+fn save_at(store: &mut Store, tree: &ScanTree, finished: i64) -> i64 {
+    store
+        .save_scan(tree, &[], finished - 10, finished, Retention::default())
+        .unwrap()
+}
+
+#[test]
+fn folder_history_follows_a_folder_across_scans_by_path() {
+    let mut store = Store::open_in_memory().unwrap();
+    let a = save_at(&mut store, &tree("C:\\", 80 * MB), 1_000);
+    let b = save_at(&mut store, &tree("C:\\", 120 * MB), 2_000);
+    save_at(&mut store, &tree("D:\\", 90 * MB), 1_500); // another root is ignored
+
+    let scans = store.scans_for_root("c:\\").unwrap();
+    assert_eq!(
+        scans.iter().map(|s| s.id).collect::<Vec<_>>(),
+        [a, b],
+        "oldest first, root case-insensitive"
+    );
+
+    let big = store.folder_history("C:\\", &["big"]).unwrap();
+    assert_eq!(big.len(), 2);
+    assert_eq!(big[0].size, FolderSize::Known(80 * MB));
+    assert_eq!(big[1].size, FolderSize::Known(120 * MB));
+    assert_eq!(big[0].finished_at_ms, 1_000);
+    assert!(!big[0].partial);
+
+    let inner = store.folder_history("C:\\", &["big", "inner"]).unwrap();
+    assert_eq!(inner[1].size, FolderSize::Known(70 * MB));
+
+    // The root itself is the empty path.
+    let root = store.folder_history("C:\\", &[]).unwrap();
+    assert_eq!(
+        root[1].size,
+        FolderSize::Known(20 * MB + 120 * MB + 500 * 1024)
+    );
+}
+
+#[test]
+fn folder_history_tells_small_from_missing() {
+    let mut store = Store::open_in_memory().unwrap();
+    save_at(&mut store, &tree("C:\\", 80 * MB), 1_000);
+    // "tiny" exists but was below the 1 MB threshold; "ghost" never existed.
+    let tiny = store.folder_history("C:\\", &["big", "tiny"]).unwrap();
+    assert_eq!(tiny[0].size, FolderSize::BelowThreshold { max_bytes: MB });
+    // "inner" has no pruned children, so an unknown name under it is simply missing.
+    let ghost = store
+        .folder_history("C:\\", &["big", "inner", "ghost"])
+        .unwrap();
+    assert_eq!(ghost[0].size, FolderSize::Missing);
+    // Something below a pruned folder was never stored either, so it is "small", not missing.
+    let under_small = store.folder_history("C:\\", &["small", "x"]).unwrap();
+    assert_eq!(
+        under_small[0].size,
+        FolderSize::BelowThreshold { max_bytes: MB }
+    );
+    assert!(store.folder_history("Z:\\", &["big"]).unwrap().is_empty());
+}
+
+#[test]
+fn partial_scans_are_flagged_in_the_history() {
+    let mut store = Store::open_in_memory().unwrap();
+    let mut t = tree("C:\\", 80 * MB);
+    t.stats.cancelled = true;
+    save_at(&mut store, &t, 1_000);
+    assert!(store.folder_history("C:\\", &["big"]).unwrap()[0].partial);
 }
