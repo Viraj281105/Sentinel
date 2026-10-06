@@ -44,7 +44,8 @@ describe("GrowthHistory", () => {
     expect(await screen.findByText(/across 2 complete\s+analyses/)).toBeInTheDocument();
     expect(screen.getByText(/about .* a day/)).toBeInTheDocument();
     expect(screen.getByText(/3 analyses from/)).toBeInTheDocument();
-    expect(screen.getByText(/keeps only the last 10 per drive/)).toBeInTheDocument();
+    expect(screen.getByText(/keeps up to 10 per drive: the newest three always/)).toBeInTheDocument();
+    expect(screen.getByText(/one per week after that, so older history is sparser/)).toBeInTheDocument();
     expect(screen.getByText(/Hollow dots are cancelled/)).toBeInTheDocument();
     expect(screen.getByText(/scale does not start at zero/)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /across 3 analyses/ })).toBeInTheDocument();

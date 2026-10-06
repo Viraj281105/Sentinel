@@ -346,9 +346,20 @@ complete analyses; category changes need both ends to have been classified. The 
 the real span and that only the last ten analyses per root are kept, and its sparkline
 prints its range because the scale does not start at zero.
 
-Known limit: because an incremental update is saved as an analysis, frequent updates use up
-the ten kept analyses and shorten the history's reach. Thinning (for example, replacing an
-analysis made within hours of the previous one) is a recorded follow-up, not done.
+**Retention and thinning** (`sentinel_store::scans_to_thin`, applied inside `save_scan`).
+An incremental update is saved as an analysis, so keeping "the last ten" would let a few
+updates erase all older history. Scans of one root are therefore thinned as they age:
+the newest three are always kept; older *complete* scans are reduced to one per UTC day
+within 14 days of the newest scan and one per UTC week beyond that; older incomplete scans
+are dropped (history never uses them); and a hard ceiling of 30 per root is applied last,
+oldest first. That is roughly four months of history within the ceiling, and a 14-day
+daily window was chosen so the weekly tier is not crowded out by the cap (a first choice
+of 30 days left no room for it). Age is measured from the newest scan, not the clock, so a
+long gap never thins away the only history there is. A complete recent scan stands in for
+its day; a day covered only by incomplete scans does not. Trade-off: analyses made close
+together are merged, so "what changed since this morning's analysis" may compare with an
+earlier one. The newest scan is never deleted, so the retained tree, the default baseline
+for anomaly attribution and the previous-scan comparison are unaffected.
 
 ### Implemented: anomaly attribution (`anomaly.rs`)
 

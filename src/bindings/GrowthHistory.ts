@@ -10,6 +10,7 @@ export type GrowthHistory = { root: string, points: Array<GrowthPoint>, summary:
  */
 categoryChanges: Array<CategoryChange>, 
 /**
- * How many analyses of one root are kept; the history never reaches further back.
+ * The most analyses of one root that are kept. Older ones are thinned (one per day,
+ * then one per week), so the history is sparser the further back it goes.
  */
 keptAnalyses: number, };

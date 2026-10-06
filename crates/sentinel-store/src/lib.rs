@@ -129,23 +129,86 @@ CREATE TABLE project_searches (
 ",
 ];
 
-/// How much of each scan to keep.
+/// How much of each scan to keep, and how many scans.
+///
+/// Scans of one root are *thinned* as they age so that frequent analyses (an incremental
+/// update is saved as an analysis) do not use up the history: the newest few are always
+/// kept, older complete scans are reduced to one per day for the last two weeks and one per
+/// week beyond that (about four months of history within the default ceiling), and older incomplete scans are dropped. `keep_scans_per_root` is a hard
+/// ceiling applied last. See [`scans_to_thin`].
 #[derive(Debug, Clone, Copy)]
 pub struct Retention {
     /// Folders smaller than this are not stored individually; each parent records how
     /// many were dropped and their combined size.
     pub min_node_bytes: u64,
-    /// Older scans of the same root beyond this count are deleted.
+    /// The most scans of one root ever kept; the oldest go first.
     pub keep_scans_per_root: u32,
+    /// The newest scans of a root that are always kept, whatever their age or number.
+    pub keep_recent: u32,
+    /// Scans within this many days of the newest one are thinned to one per day; older
+    /// ones to one per week.
+    pub daily_for_days: u32,
 }
 
 impl Default for Retention {
     fn default() -> Self {
         Self {
             min_node_bytes: 1024 * 1024,
-            keep_scans_per_root: 10,
+            keep_scans_per_root: 30,
+            keep_recent: 3,
+            daily_for_days: 14,
         }
     }
+}
+
+/// What the thinning rule needs to know about one saved scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScanMeta {
+    pub id: ScanId,
+    pub finished_at_ms: i64,
+    /// Cancelled or truncated: its totals are lower bounds.
+    pub partial: bool,
+}
+
+const DAY_MS: i64 = 86_400_000;
+
+/// Which of one root's scans to delete. Pure.
+///
+/// Days and weeks are UTC (a scan near local midnight may share a bucket with one a few
+/// hours away), and age is measured from the newest scan rather than the clock, so a long
+/// gap between analyses never thins history that is all there is.
+pub fn scans_to_thin(scans: &[ScanMeta], r: &Retention) -> Vec<ScanId> {
+    let mut sorted: Vec<ScanMeta> = scans.to_vec();
+    sorted.sort_by_key(|s| std::cmp::Reverse((s.finished_at_ms, s.id)));
+    let Some(newest) = sorted.first().map(|s| s.finished_at_ms) else {
+        return Vec::new();
+    };
+    let bucket = |s: &ScanMeta| -> (bool, i64) {
+        if newest - s.finished_at_ms <= i64::from(r.daily_for_days) * DAY_MS {
+            (true, s.finished_at_ms.div_euclid(DAY_MS))
+        } else {
+            (false, s.finished_at_ms.div_euclid(7 * DAY_MS))
+        }
+    };
+    let mut kept: Vec<ScanMeta> = Vec::new();
+    let mut seen: std::collections::HashSet<(bool, i64)> = std::collections::HashSet::new();
+    for (i, s) in sorted.iter().enumerate() {
+        if i < r.keep_recent.max(1) as usize {
+            kept.push(*s);
+            if !s.partial {
+                seen.insert(bucket(s));
+            }
+        } else if !s.partial && seen.insert(bucket(s)) {
+            kept.push(*s);
+        }
+    }
+    kept.truncate((r.keep_scans_per_root.max(1)) as usize);
+    let keep: std::collections::HashSet<ScanId> = kept.iter().map(|s| s.id).collect();
+    sorted
+        .iter()
+        .filter(|s| !keep.contains(&s.id))
+        .map(|s| s.id)
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -327,12 +390,24 @@ impl Store {
                 ])?;
             }
         }
-        let removed = tx.execute(
-            "DELETE FROM scans WHERE root = ?1 AND id NOT IN (
-                 SELECT id FROM scans WHERE root = ?1
-                 ORDER BY finished_at_ms DESC, id DESC LIMIT ?2)",
-            params![root, retention.keep_scans_per_root],
-        )?;
+        let metas: Vec<ScanMeta> = {
+            let mut stmt = tx.prepare(
+                "SELECT id, finished_at_ms, cancelled OR truncated FROM scans WHERE root = ?1",
+            )?;
+            let rows = stmt.query_map([&root], |r| {
+                Ok(ScanMeta {
+                    id: r.get(0)?,
+                    finished_at_ms: r.get(1)?,
+                    partial: r.get(2)?,
+                })
+            })?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        let doomed = scans_to_thin(&metas, &retention);
+        let removed = doomed.len();
+        for old in doomed {
+            tx.execute("DELETE FROM scans WHERE id = ?1", [old])?;
+        }
         tx.commit()?;
         tracing::info!(id, root, removed_old = removed, "scan saved");
         Ok(id)

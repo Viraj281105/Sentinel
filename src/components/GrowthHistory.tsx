@@ -41,7 +41,7 @@ export function GrowthHistory({ scanId }: { scanId: number }) {
   if (h.points.length < 2) {
     return (
       <p className="text-sm text-slate-500 dark:text-slate-400">
-        History appears after a second analysis of {h.root}. Sentinel keeps the last {h.keptAnalyses} analyses of each
+        History appears after a second analysis of {h.root}. Sentinel keeps up to {h.keptAnalyses} analyses of each
         drive.
       </p>
     );
@@ -63,8 +63,8 @@ export function GrowthHistory({ scanId }: { scanId: number }) {
       )}
       <p className="text-xs text-slate-500 dark:text-slate-400">
         {h.points.length} analyses from {first && formatDateTime(first.finishedAtMs)} to{" "}
-        {last && formatDateTime(last.finishedAtMs)}. Sentinel keeps only the last {h.keptAnalyses} per drive, so history
-        reaches back no further than that, and analyses made close together cover little time. Hollow dots are cancelled
+        {last && formatDateTime(last.finishedAtMs)}. Sentinel keeps up to {h.keptAnalyses} per drive: the newest three always, then one per day for two weeks and one per
+        week after that, so older history is sparser and analyses made close together are merged. Hollow dots are cancelled
         or incomplete analyses, left out of the trend.
       </p>
       {h.categoryChanges.length > 0 && (

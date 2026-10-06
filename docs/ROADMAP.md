@@ -66,6 +66,8 @@ Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth hist
 
 5. ✅ Anomaly attribution: what grew or shrank most since the previous complete analysis, traced down to the responsible folders with a driver and share of the net change, the unattributed remainder stated, small-in-baseline growth marked as a lower bound, and new or bigger large files listed only where certain
 
+6. ✅ Analysis thinning: scans are thinned as they age (newest three always, one per day for two weeks, one per week beyond, incomplete old ones dropped, hard ceiling of 30 per root) so frequent updates cannot use up the history; about four months of history fit in the ceiling
+
 ## Phase 8 – AI abstraction ⬜
 `AiProvider` trait, Ollama + OpenAI-compatible, redaction layer, schema validation, NL → structured query.
 
@@ -83,12 +85,11 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 7 follow-ups, small and concrete: thin saved analyses so frequent updates do not use
-up the ten kept per root; persist trees across restarts; the startup USN-journal check.
-Then Phase 8 (AI abstraction) starts with maintainer decisions that code cannot settle:
-which providers are allowed (local Ollama only, or also OpenAI-compatible endpoints), what
-may leave the machine, and how the redaction layer is verified. Nothing in Phases 5 to 7
-sends data anywhere.
+Two small Phase 7 follow-ups remain: persist scan trees across restarts, and the startup
+USN-journal check. Then Phase 8 (AI abstraction) starts with maintainer decisions that code
+cannot settle: which providers are allowed (local Ollama only, or also OpenAI-compatible
+endpoints), what may leave the machine, and how the redaction layer is verified. Nothing in
+Phases 5 to 7 sends data anywhere.
 
 ## Completed first milestone (historical)
 

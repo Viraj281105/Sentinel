@@ -383,3 +383,227 @@ fn partial_scans_are_flagged_in_the_history() {
     save_at(&mut store, &t, 1_000);
     assert!(store.folder_history("C:\\", &["big"]).unwrap()[0].partial);
 }
+
+mod thinning {
+    use sentinel_store::{Retention, ScanMeta, scans_to_thin};
+
+    const DAY: i64 = 86_400_000;
+    const MIN: i64 = 60_000;
+    /// A UTC midnight, so "days" in these tests line up with the rule's buckets.
+    const BASE: i64 = 20_000 * DAY;
+
+    fn meta(id: i64, at: i64) -> ScanMeta {
+        ScanMeta {
+            id,
+            finished_at_ms: at,
+            partial: false,
+        }
+    }
+
+    fn deleted(scans: &[ScanMeta], r: &Retention) -> Vec<i64> {
+        let mut d = scans_to_thin(scans, r);
+        d.sort_unstable();
+        d
+    }
+
+    #[test]
+    fn a_burst_of_updates_cannot_use_up_the_history() {
+        // An old, distinct day plus twelve analyses within an hour.
+        let mut scans = vec![meta(100, BASE - 5 * DAY), meta(101, BASE - 2 * DAY)];
+        scans.extend((1..=12).map(|i| meta(i, BASE + 10 * 60 * MIN + i * 5 * MIN)));
+        let d = deleted(&scans, &Retention::default());
+        assert_eq!(
+            d,
+            (1..=9).collect::<Vec<_>>(),
+            "only the newest three of the burst stay"
+        );
+        assert!(
+            !d.contains(&100) && !d.contains(&101),
+            "older days are untouched"
+        );
+    }
+
+    #[test]
+    fn the_newest_three_are_kept_even_on_one_day() {
+        let scans: Vec<_> = (1..=3).map(|i| meta(i, BASE + i * MIN)).collect();
+        assert!(deleted(&scans, &Retention::default()).is_empty());
+    }
+
+    #[test]
+    fn older_analyses_thin_to_one_per_day_then_one_per_week() {
+        let r = Retention::default();
+        let mut scans = Vec::new();
+        let mut id = 0;
+        // Two analyses a day for 60 days, evening one newer.
+        for day in 0..60 {
+            for hour in [9, 20] {
+                id += 1;
+                scans.push(meta(id, BASE - day * DAY + hour * 60 * MIN));
+            }
+        }
+        let doomed = deleted(&scans, &r);
+        let kept: Vec<ScanMeta> = scans
+            .iter()
+            .filter(|s| !doomed.contains(&s.id))
+            .copied()
+            .collect();
+        let newest = scans.iter().map(|s| s.finished_at_ms).max().unwrap();
+        let (recent_window, older): (Vec<&ScanMeta>, Vec<&ScanMeta>) = kept
+            .iter()
+            .partition(|s| newest - s.finished_at_ms <= 14 * DAY);
+        // One per day in the last month: no two kept scans share a day.
+        let mut days: Vec<i64> = recent_window
+            .iter()
+            .map(|s| s.finished_at_ms.div_euclid(DAY))
+            .collect();
+        days.sort_unstable();
+        let before = days.len();
+        days.dedup();
+        assert!(
+            before - days.len() <= 2,
+            "only the always-kept newest three may share a day"
+        );
+        assert!(
+            recent_window.len() >= 14,
+            "two weeks of daily scans survive: {}",
+            recent_window.len()
+        );
+        // One per week beyond that.
+        let mut weeks: Vec<i64> = older
+            .iter()
+            .map(|s| s.finished_at_ms.div_euclid(7 * DAY))
+            .collect();
+        weeks.sort_unstable();
+        let n = weeks.len();
+        weeks.dedup();
+        assert_eq!(n, weeks.len());
+        assert!((5..=8).contains(&n), "weekly scans for the rest: {n}");
+        assert!(kept.len() as u32 <= r.keep_scans_per_root);
+    }
+
+    #[test]
+    fn the_cap_drops_the_oldest_and_never_the_newest() {
+        let scans: Vec<_> = (0..10).map(|i| meta(i + 1, BASE - (9 - i) * DAY)).collect();
+        let r = Retention {
+            keep_scans_per_root: 5,
+            ..Retention::default()
+        };
+        assert_eq!(deleted(&scans, &r), vec![1, 2, 3, 4, 5]);
+        let zero = Retention {
+            keep_scans_per_root: 0,
+            ..Retention::default()
+        };
+        assert!(
+            !deleted(&scans, &zero).contains(&10),
+            "the newest always survives"
+        );
+    }
+
+    #[test]
+    fn incomplete_scans_are_dropped_when_old_and_do_not_stand_in_for_a_day() {
+        let mut scans: Vec<ScanMeta> = (1..=3).map(|i| meta(i, BASE + i * MIN)).collect();
+        // An old incomplete scan, and an old complete one on the same day as a recent partial.
+        scans.push(ScanMeta {
+            id: 10,
+            finished_at_ms: BASE - 10 * DAY,
+            partial: true,
+        });
+        scans.push(meta(11, BASE - 10 * DAY + MIN));
+        let d = deleted(&scans, &Retention::default());
+        assert_eq!(
+            d,
+            vec![10],
+            "the partial one goes, the complete one on its day stays"
+        );
+
+        // A day covered only by incomplete scans does not make an older complete scan of
+        // that day redundant: it is the only usable one, so it stays.
+        let partial = |id: i64, at: i64| ScanMeta {
+            id,
+            finished_at_ms: at,
+            partial: true,
+        };
+        let only_partial_recent = vec![
+            partial(1, BASE + 5 * MIN),
+            partial(2, BASE + 4 * MIN),
+            partial(3, BASE + 3 * MIN),
+            meta(4, BASE + 2 * MIN),
+        ];
+        assert!(deleted(&only_partial_recent, &Retention::default()).is_empty());
+
+        // But a complete scan among the recent ones does stand in for that day.
+        let complete_recent = vec![
+            meta(1, BASE + 5 * MIN),
+            partial(2, BASE + 4 * MIN),
+            partial(3, BASE + 3 * MIN),
+            meta(4, BASE + 2 * MIN),
+        ];
+        assert_eq!(deleted(&complete_recent, &Retention::default()), vec![4]);
+    }
+
+    #[test]
+    fn the_input_order_does_not_matter_and_a_long_gap_is_not_thinned_away() {
+        let mut scans = vec![
+            meta(1, BASE - 400 * DAY),
+            meta(2, BASE - 399 * DAY),
+            meta(3, BASE),
+        ];
+        let a = deleted(&scans, &Retention::default());
+        scans.reverse();
+        assert_eq!(a, deleted(&scans, &Retention::default()));
+        assert!(
+            a.is_empty(),
+            "three scans are all inside the always-kept three"
+        );
+        assert!(scans_to_thin(&[], &Retention::default()).is_empty());
+    }
+}
+
+#[test]
+fn saving_many_updates_in_a_row_keeps_the_history_that_was_already_there() {
+    let mut store = Store::open_in_memory().unwrap();
+    let r = Retention::default();
+    let day = 86_400_000;
+    let base = 20_000 * day;
+    let old_a = store
+        .save_scan(&tree("C:\\", 80 * MB), &[], 0, base - 7 * day, r)
+        .unwrap();
+    let old_b = store
+        .save_scan(&tree("C:\\", 82 * MB), &[], 0, base - 3 * day, r)
+        .unwrap();
+    let other = store
+        .save_scan(&tree("D:\\", 80 * MB), &[], 0, base - 3 * day, r)
+        .unwrap();
+    let mut burst = Vec::new();
+    for i in 0..15 {
+        burst.push(
+            store
+                .save_scan(&tree("C:\\", 85 * MB), &[], 0, base + i * 60_000, r)
+                .unwrap(),
+        );
+    }
+    // The week-old and three-day-old analyses survive 15 saves in an hour.
+    assert!(store.scan(old_a).unwrap().is_some());
+    assert!(store.scan(old_b).unwrap().is_some());
+    assert!(
+        store.scan(other).unwrap().is_some(),
+        "other roots are untouched"
+    );
+    // Of the burst only the newest three remain, and the newest is the latest save.
+    let alive: Vec<i64> = burst
+        .iter()
+        .copied()
+        .filter(|id| store.scan(*id).unwrap().is_some())
+        .collect();
+    assert_eq!(alive, burst[12..].to_vec());
+    assert_eq!(
+        store.latest_scan().unwrap().unwrap().id,
+        *burst.last().unwrap()
+    );
+    // Comparison still works: the previous scan is the one before it.
+    assert_eq!(
+        store.previous_scan(burst[14]).unwrap().unwrap().id,
+        burst[13]
+    );
+    assert_eq!(store.scans_for_root("C:\\").unwrap().len(), 5);
+}

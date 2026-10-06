@@ -1,8 +1,9 @@
 //! Growth history: how a drive or one folder changed across the saved analyses of a root.
 //!
 //! What is and is not concluded:
-//! - Only the saved analyses exist (the newest ten per root), so history is as dense and
-//!   as long as the user's own analyses; its real span is reported, never implied.
+//! - Only the saved analyses exist (thinned as they age: see `Retention`), so history is
+//!   as dense and as long as the user's own analyses; its real span is reported, never
+//!   implied.
 //! - Cancelled or truncated analyses are shown but left out of every trend, since their
 //!   totals are lower bounds.
 //! - A folder that was too small to be stored individually has no exact size; the history
@@ -104,7 +105,8 @@ pub struct GrowthHistory {
     /// Change per category between the first and last complete analysis, largest change
     /// first. Empty when either analysis predates classification.
     pub category_changes: Vec<CategoryChange>,
-    /// How many analyses of one root are kept; the history never reaches further back.
+    /// The most analyses of one root that are kept. Older ones are thinned (one per day,
+    /// then one per week), so the history is sparser the further back it goes.
     pub kept_analyses: u32,
 }
 
@@ -340,7 +342,7 @@ mod tests {
             g.points.iter().map(|p| p.scan_id).collect::<Vec<_>>(),
             [a, b]
         );
-        assert_eq!(g.kept_analyses, 10);
+        assert_eq!(g.kept_analyses, 30);
         let s = g.summary.unwrap();
         assert_eq!(s.analyses, 2);
         assert!(s.change_bytes > 0);
