@@ -55,6 +55,7 @@ pub fn run() {
                 user,
                 quarantine,
             });
+            app.state::<AppState>().scans.resume_watch();
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sentinel started");
             Ok(())
         })
@@ -66,6 +67,8 @@ pub fn run() {
             commands::scan::start_scan,
             commands::scan::cancel_scan,
             commands::scan::scan_status,
+            commands::scan::update_scan,
+            commands::scan::watch_status,
             commands::scan::scan_listing,
             commands::scan::scan_largest_files,
             commands::cleanup::cleanup_providers,

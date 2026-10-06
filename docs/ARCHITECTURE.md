@@ -315,8 +315,22 @@ replaced by a file, and a noisy subtree. It refuses (`FullScanNeeded`) when even
 lost, leaves the tree untouched on cancel, and reports
 `largest_files_may_be_incomplete` when files left the largest-files list and nothing known
 can replace them. Cost: the arena rebuild is linear in the tree's size; directory reads,
-which dominate a scan, are limited to the dirty set. Not yet wired into the app (scan
-scheduling, per-root lifecycle, persisting trees, startup journal check).
+which dominate a scan, are limited to the dirty set. Wired into the app by
+`ScanManager` (see below).
+
+**App wiring** (`ScanManager`, `scans.rs`): a scan starts a watcher on its root *before* the
+walk begins, so changes made during the scan are reported as pending, not missed. A
+complete tree of at most 400,000 nodes is kept in memory after saving (larger trees are
+released as before). `watch_status` drains the watcher into an accumulator and reports
+folders changed, whether events were lost, and whether an update can be incremental
+(watch intact, retained tree matches the latest saved scan). `update_scan` re-reads only
+the changed folders and saves the result as a new analysis (so history and comparison keep
+working); otherwise it starts a full analysis. Nothing rescans on its own: the Storage page
+shows a banner and the user presses Update. On a rescan failure or cancel, the tree and
+the pending changes are put back. After a restart the last root is watched again but its
+tree is gone and earlier changes are unknown, so the first update is a full analysis and
+the banner says changes before watching began are not known. Not done: persisting trees,
+and the startup check of the unelevated USN journal position.
 
 ### Implemented: Docker and WSL inspection (`sentinel-containers`)
 

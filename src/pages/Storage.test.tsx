@@ -168,6 +168,8 @@ function mockBackend(status: ScanStatus = { running: null, last: null }, trends:
           return trends;
         case "scan_status":
           return status;
+        case "watch_status":
+          throw new Error("no watcher in this test"); // the banner hides itself
         case "start_scan":
           return 1;
         case "cancel_scan":

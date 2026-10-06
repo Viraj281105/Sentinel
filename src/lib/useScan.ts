@@ -65,6 +65,20 @@ export function useScan() {
     }
   }, []);
 
+  /** Bring the latest analysis up to date (incrementally when the backend can). */
+  const update = useCallback(async (root: string) => {
+    try {
+      const id = await ipc.updateScan();
+      setState((s) => ({
+        ...s,
+        error: null,
+        running: s.running?.id === id ? s.running : { id, root, progress: { dirs: 0, files: 0, bytes: 0, problems: 0 } },
+      }));
+    } catch (err) {
+      setState((s) => ({ ...s, error: describeError(err) }));
+    }
+  }, []);
+
   const cancel = useCallback(async (id: number) => {
     try {
       await ipc.cancelScan(id);
@@ -73,5 +87,5 @@ export function useScan() {
     }
   }, []);
 
-  return { state, start, cancel };
+  return { state, start, update, cancel };
 }

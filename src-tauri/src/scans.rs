@@ -3,16 +3,19 @@
 //! restarts and the in-memory tree is released as soon as it is saved. The full tree
 //! never crosses IPC; the frontend asks for one folder level at a time.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use sentinel_classify::{Category, CategoryBytes, Classification, Classifier};
+use sentinel_scanner::incremental::{RescanError, rescan};
 use sentinel_scanner::scan::{
-    LargeFile, NodeId, NodeStatus, ScanControl, ScanOptions, ScanProgress, ScanStats, scan,
+    LargeFile, NodeId, NodeStatus, ScanControl, ScanOptions, ScanProgress, ScanStats, ScanTree,
+    scan,
 };
+use sentinel_scanner::watch::{Changes, WatchOptions, Watcher};
 use sentinel_store::{Retention, ScanId, ScanRecord};
 use serde::Serialize;
 use ts_rs::TS;
@@ -26,6 +29,9 @@ pub(crate) const FAILED_EVENT: &str = "scan-failed";
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 /// Children beyond this many (largest first) are summarized, not listed.
 const MAX_CHILDREN: u32 = 200;
+/// The last tree is kept in memory for incremental updates only if it is this small
+/// (roughly 100 MB at most). Larger trees are updated by a full analysis.
+const RETAIN_MAX_NODES: usize = 400_000;
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -168,6 +174,30 @@ pub struct LargeFileView {
     pub classification: Option<Classification>,
 }
 
+/// Whether the saved analysis is still current, according to the folder watcher.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WatchStatus {
+    /// The folder being watched (the last analyzed root).
+    pub root: Option<String>,
+    pub watching: bool,
+    /// When watching began. Changes before that are unknown.
+    #[ts(type = "number | null")]
+    pub since_ms: Option<i64>,
+    /// Folders whose contents changed since the analysis.
+    #[ts(type = "number")]
+    pub changed_dirs: u64,
+    /// Busy folders (temp files, `node_modules`, ...) with changes somewhere beneath them.
+    #[ts(type = "number")]
+    pub changed_subtrees: u64,
+    /// Events were lost (or the watch broke): only a full analysis is reliable.
+    pub lost_events: bool,
+    pub broken: Option<String>,
+    /// An update can re-read just the changed folders (otherwise it analyzes everything).
+    pub can_update_incrementally: bool,
+}
+
 struct Running {
     id: u64,
     root: String,
@@ -180,6 +210,67 @@ struct Slot {
     running: Option<Running>,
 }
 
+/// The last full tree, kept so changed folders can be re-read without a full analysis.
+struct Retained {
+    scan_id: ScanId,
+    tree: ScanTree,
+}
+
+/// Changes reported by the watcher and not yet applied to an analysis.
+#[derive(Default)]
+struct Accum {
+    dirs: BTreeSet<PathBuf>,
+    subtrees: BTreeSet<PathBuf>,
+    root_dirty: bool,
+    broken: Option<String>,
+}
+
+impl Accum {
+    fn merge(&mut self, c: Changes) {
+        self.dirs.extend(c.dirty_dirs);
+        self.subtrees.extend(c.dirty_subtrees);
+        self.root_dirty |= c.root_dirty;
+        if c.broken.is_some() {
+            self.broken = c.broken;
+        }
+    }
+
+    fn take(&mut self) -> Changes {
+        let a = std::mem::take(self);
+        Changes {
+            dirty_dirs: a.dirs.into_iter().collect(),
+            dirty_subtrees: a.subtrees.into_iter().collect(),
+            root_dirty: a.root_dirty,
+            broken: a.broken,
+            ..Changes::default()
+        }
+    }
+}
+
+struct ActiveWatch {
+    root: PathBuf,
+    watcher: Watcher,
+    since_ms: i64,
+    acc: Accum,
+}
+
+impl ActiveWatch {
+    fn pump(&mut self) {
+        let c = self.watcher.drain();
+        self.acc.merge(c);
+    }
+}
+
+fn same_folder(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| {
+        let s = p.to_string_lossy().to_lowercase();
+        s.trim_start_matches(r"\\?\")
+            .trim_end_matches('\\')
+            .to_owned()
+    };
+    norm(a) == norm(b)
+}
+
 /// Something that can receive scan events. Implemented for the Tauri app handle; tests
 /// use a recorder.
 pub(crate) trait ScanEvents: Send + Sync + 'static {
@@ -190,6 +281,8 @@ pub(crate) trait ScanEvents: Send + Sync + 'static {
 
 pub(crate) struct ScanManager {
     slot: Arc<Mutex<Slot>>,
+    retained: Arc<Mutex<Option<Retained>>>,
+    watch: Arc<Mutex<Option<ActiveWatch>>>,
     db: Db,
     classifier: Arc<Classifier>,
     retention: Retention,
@@ -198,6 +291,59 @@ pub(crate) struct ScanManager {
 fn lock(slot: &Mutex<Slot>) -> MutexGuard<'_, Slot> {
     // Each field of `Slot` is replaced wholesale, so a poisoned lock is still coherent.
     slot.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+fn lock_any<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Save a finished tree and describe it. The caller decides whether to keep the tree.
+fn save_tree(
+    db: &Db,
+    classifier: &Classifier,
+    retention: Retention,
+    tree: &ScanTree,
+    started: i64,
+) -> Result<SavedScan, String> {
+    let finished = now_ms();
+    let breakdown = classifier.breakdown(tree);
+    let categories: Vec<(&str, u64)> = breakdown
+        .iter()
+        .map(|c| (c.category.key(), c.bytes))
+        .collect();
+    let scan_id = db
+        .lock()
+        .save_scan(tree, &categories, started, finished, retention)
+        .map_err(|e| format!("the analysis finished but could not be saved: {e}"))?;
+    let rec = db
+        .lock()
+        .scan(scan_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "the saved analysis disappeared".to_owned())?;
+    saved(db, rec).map_err(|e| e.message)
+}
+
+/// Apply `changes` to the retained tree and save the result as a new analysis.
+fn apply_update(
+    kept: &mut Option<Retained>,
+    changes: &Changes,
+    control: &ScanControl,
+    (db, classifier, retention): (&Db, &Classifier, Retention),
+    started: i64,
+) -> Result<SavedScan, String> {
+    let r = kept
+        .as_mut()
+        .ok_or_else(|| "There is no saved tree to update; run a full analysis.".to_owned())?;
+    rescan(&mut r.tree, changes, &ScanOptions::default(), control).map_err(|e| match e {
+        RescanError::Cancelled => "The update was cancelled.".to_owned(),
+        RescanError::FullScanNeeded => {
+            "Changes were missed, so a full analysis is needed.".to_owned()
+        }
+        RescanError::Scan(e) => e.to_string(),
+    })?;
+    let scan = save_tree(db, classifier, retention, &r.tree, started)?;
+    r.scan_id = scan.scan_id;
+    Ok(scan)
 }
 
 fn scan_ref(r: &ScanRecord) -> ScanRef {
@@ -238,9 +384,64 @@ impl ScanManager {
     pub(crate) fn new(db: Db, classifier: Arc<Classifier>) -> Self {
         Self {
             slot: Arc::default(),
+            retained: Arc::default(),
+            watch: Arc::default(),
             db,
             classifier,
             retention: Retention::default(),
+        }
+    }
+
+    /// Claim the single scan slot for `root`.
+    fn claim(&self, root: &str) -> Result<(u64, Arc<ScanControl>), CommandError> {
+        let mut slot = lock(&self.slot);
+        if let Some(r) = &slot.running {
+            return Err(CommandError::new(
+                ErrorKind::Busy,
+                format!("{} is already being analyzed. Cancel it first.", r.root),
+            ));
+        }
+        slot.next_id += 1;
+        let id = slot.next_id;
+        let control = Arc::new(ScanControl::new());
+        slot.running = Some(Running {
+            id,
+            root: root.to_owned(),
+            control: Arc::clone(&control),
+        });
+        Ok((id, control))
+    }
+
+    /// Watch `path` for changes. Started *before* a scan so changes made during it are
+    /// reported as pending rather than missed. A failure only means no staleness hints.
+    fn begin_watch(&self, path: &Path) {
+        let mut w = lock_any(&self.watch);
+        *w = None; // stop the previous watch first
+        match Watcher::start(path, &WatchOptions::default()) {
+            Ok(watcher) => {
+                *w = Some(ActiveWatch {
+                    root: path.to_path_buf(),
+                    watcher,
+                    since_ms: now_ms(),
+                    acc: Accum::default(),
+                });
+            }
+            Err(err) => {
+                tracing::warn!(root = %path.display(), error = %err, "folder watch not started");
+            }
+        }
+    }
+
+    /// Resume watching the last analyzed folder after a restart. Changes made while the
+    /// app was closed are unknown, so no incremental update is possible until the next
+    /// full analysis.
+    pub(crate) fn resume_watch(&self) {
+        let Ok(Some(latest)) = self.db.lock().latest_scan() else {
+            return;
+        };
+        let path = PathBuf::from(&latest.root);
+        if path.is_absolute() && path.is_dir() {
+            self.begin_watch(&path);
         }
     }
 
@@ -258,22 +459,10 @@ impl ScanManager {
                 format!("{root} is not a folder that can be analyzed."),
             ));
         }
-        let mut slot = lock(&self.slot);
-        if let Some(r) = &slot.running {
-            return Err(CommandError::new(
-                ErrorKind::Busy,
-                format!("{} is already being analyzed. Cancel it first.", r.root),
-            ));
-        }
-        slot.next_id += 1;
-        let id = slot.next_id;
-        let control = Arc::new(ScanControl::new());
-        slot.running = Some(Running {
-            id,
-            root: root.to_owned(),
-            control: Arc::clone(&control),
-        });
-        drop(slot);
+        let (id, control) = self.claim(root)?;
+        // The old tree describes an older state; the watch restarts with this scan.
+        *lock_any(&self.retained) = None;
+        self.begin_watch(&path);
 
         tracing::info!(id, root, "scan started");
         let events = Arc::new(events);
@@ -281,6 +470,7 @@ impl ScanManager {
         spawn_progress_reporter(id, root, &control, &events, &done);
 
         let slot = Arc::clone(&self.slot);
+        let retained = Arc::clone(&self.retained);
         let db = self.db.clone();
         let classifier = Arc::clone(&self.classifier);
         let retention = self.retention;
@@ -292,25 +482,16 @@ impl ScanManager {
                 let outcome = scan(&path, &options, &control)
                     .map_err(|e| e.to_string())
                     .and_then(|tree| {
-                        let finished = now_ms();
-                        let breakdown = classifier.breakdown(&tree);
-                        let categories: Vec<(&str, u64)> = breakdown
-                            .iter()
-                            .map(|c| (c.category.key(), c.bytes))
-                            .collect();
-                        let scan_id = db
-                            .lock()
-                            .save_scan(&tree, &categories, started, finished, retention)
-                            .map_err(|e| {
-                                format!("the analysis finished but could not be saved: {e}")
-                            })?;
-                        drop(tree);
-                        let rec = db
-                            .lock()
-                            .scan(scan_id)
-                            .map_err(|e| e.to_string())?
-                            .ok_or_else(|| "the saved analysis disappeared".to_owned())?;
-                        saved(&db, rec).map_err(|e| e.message)
+                        let scan = save_tree(&db, &classifier, retention, &tree, started)?;
+                        // Keep a complete, small tree for incremental updates.
+                        let keep = tree.nodes.len() <= RETAIN_MAX_NODES
+                            && !tree.stats.cancelled
+                            && !tree.stats.truncated;
+                        *lock_any(&retained) = keep.then_some(Retained {
+                            scan_id: scan.scan_id,
+                            tree,
+                        });
+                        Ok(scan)
                     });
                 done.store(true, Ordering::Relaxed);
                 lock(&slot).running = None;
@@ -329,6 +510,115 @@ impl ScanManager {
         if let Err(err) = spawned {
             lock(&self.slot).running = None;
             return Err(CommandError::internal("starting the scan", err));
+        }
+        Ok(id)
+    }
+
+    /// Where the saved analysis stands relative to the filesystem.
+    pub(crate) fn watch_status(&self) -> Result<WatchStatus, CommandError> {
+        let latest = self.db.lock().latest_scan()?;
+        let mut w = lock_any(&self.watch);
+        let (Some(active), Some(latest)) = (w.as_mut(), latest) else {
+            return Ok(WatchStatus {
+                root: None,
+                watching: false,
+                since_ms: None,
+                changed_dirs: 0,
+                changed_subtrees: 0,
+                lost_events: false,
+                broken: None,
+                can_update_incrementally: false,
+            });
+        };
+        active.pump();
+        let retained_ok = lock_any(&self.retained)
+            .as_ref()
+            .is_some_and(|r| r.scan_id == latest.id);
+        let lost = active.acc.root_dirty || active.acc.broken.is_some();
+        Ok(WatchStatus {
+            root: Some(active.root.display().to_string()),
+            watching: true,
+            since_ms: Some(active.since_ms),
+            changed_dirs: active.acc.dirs.len() as u64,
+            changed_subtrees: active.acc.subtrees.len() as u64,
+            lost_events: lost,
+            broken: active.acc.broken.clone(),
+            can_update_incrementally: retained_ok
+                && !lost
+                && same_folder(&active.root, Path::new(&latest.root)),
+        })
+    }
+
+    /// Bring the latest analysis up to date: re-read only the changed folders when that is
+    /// reliable, otherwise analyze the whole root again. Returns the job id.
+    pub(crate) fn update(&self, events: impl ScanEvents) -> Result<u64, CommandError> {
+        let latest = self.db.lock().latest_scan()?.ok_or_else(|| {
+            CommandError::new(ErrorKind::NotFound, "There is no analysis to update yet.")
+        })?;
+        if self.watch_status()?.can_update_incrementally {
+            self.start_incremental(&latest.root, events)
+        } else {
+            self.start(&latest.root, ScanOptions::default(), events)
+        }
+    }
+
+    fn start_incremental(&self, root: &str, events: impl ScanEvents) -> Result<u64, CommandError> {
+        let (id, control) = self.claim(root)?;
+        tracing::info!(id, root, "incremental update started");
+        let events = Arc::new(events);
+        let done = Arc::new(AtomicBool::new(false));
+        spawn_progress_reporter(id, root, &control, &events, &done);
+
+        let slot = Arc::clone(&self.slot);
+        let retained = Arc::clone(&self.retained);
+        let watch = Arc::clone(&self.watch);
+        let db = self.db.clone();
+        let classifier = Arc::clone(&self.classifier);
+        let retention = self.retention;
+        let root_s = root.to_owned();
+        let spawned = std::thread::Builder::new()
+            .name(format!("sentinel-update-{id}"))
+            .spawn(move || {
+                let started = now_ms();
+                // Take the pending changes and the tree; both are put back on failure.
+                let changes = {
+                    let mut w = lock_any(&watch);
+                    w.as_mut().map_or_else(Changes::default, |a| {
+                        a.pump();
+                        a.acc.take()
+                    })
+                };
+                let mut kept = lock_any(&retained).take();
+                let outcome = apply_update(
+                    &mut kept,
+                    &changes,
+                    &control,
+                    (&db, &classifier, retention),
+                    started,
+                );
+                *lock_any(&retained) = kept;
+                if outcome.is_err()
+                    && let Some(a) = lock_any(&watch).as_mut()
+                {
+                    a.acc.merge(changes);
+                }
+                done.store(true, Ordering::Relaxed);
+                lock(&slot).running = None;
+                match outcome {
+                    Ok(scan) => events.finished(ScanFinishedEvent { id, scan }),
+                    Err(message) => {
+                        tracing::warn!(id, error = %message, "incremental update failed");
+                        events.failed(ScanFailedEvent {
+                            id,
+                            root: root_s,
+                            message,
+                        });
+                    }
+                }
+            });
+        if let Err(err) = spawned {
+            lock(&self.slot).running = None;
+            return Err(CommandError::internal("starting the update", err));
         }
         Ok(id)
     }
@@ -685,5 +975,78 @@ mod tests {
             f.classification.map(|c| c.category),
             Some(Category::DeveloperDependencies)
         );
+    }
+
+    #[test]
+    fn watches_after_a_scan_and_updates_only_what_changed() {
+        let dir = fixture();
+        let mgr = manager();
+        let first = run(&mgr, dir.path());
+        let st = mgr.watch_status().unwrap();
+        assert!(st.watching && st.can_update_incrementally);
+        // (Stray hints from antivirus or indexing touching the fixture may already be
+        // pending; they are harmless, so the test waits for its own directories.)
+
+        let inner = dir.path().join("big").join("inner");
+        put(&inner.join("g"), 2 * MB);
+        std::fs::remove_file(dir.path().join("top.bin")).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let seen = {
+                let mut w = lock_any(&mgr.watch);
+                let a = w.as_mut().unwrap();
+                a.pump();
+                a.acc.dirs.contains(&inner) && a.acc.dirs.contains(dir.path())
+            };
+            if seen || std::time::Instant::now() > deadline {
+                assert!(seen, "the watcher never reported the changed folders");
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        let st = mgr.watch_status().unwrap();
+        assert!(st.changed_dirs >= 2 && st.can_update_incrementally && !st.lost_events);
+
+        let (rec, rx) = recorder();
+        let id = mgr.update(rec).unwrap();
+        let done = wait_done(&rx).unwrap_or_else(|e| panic!("update failed: {}", e.message));
+        assert_eq!(done.id, id);
+        assert_eq!(done.scan.previous.as_ref().unwrap().scan_id, first.scan_id);
+
+        // The updated analysis equals a fresh one.
+        let fresh = run(&manager(), dir.path());
+        assert_eq!(done.scan.stats.total_bytes, fresh.stats.total_bytes);
+        assert_eq!(done.scan.stats.files, fresh.stats.files);
+        assert_eq!(done.scan.stats.dirs, fresh.stats.dirs);
+        assert!(mgr.watch_status().unwrap().can_update_incrementally);
+    }
+
+    #[test]
+    fn lost_events_fall_back_to_a_full_analysis() {
+        let dir = fixture();
+        let mgr = manager();
+        run(&mgr, dir.path());
+        lock_any(&mgr.watch).as_mut().unwrap().acc.root_dirty = true;
+        let st = mgr.watch_status().unwrap();
+        assert!(st.lost_events && !st.can_update_incrementally);
+
+        put(&dir.path().join("late.bin"), 1000);
+        let (rec, rx) = recorder();
+        mgr.update(rec).unwrap();
+        let done = wait_done(&rx).unwrap_or_else(|e| panic!("update failed: {}", e.message));
+        assert_eq!(
+            done.scan.stats.files, 4,
+            "the full analysis saw the new file"
+        );
+        // A full analysis starts the watch afresh.
+        let st = mgr.watch_status().unwrap();
+        assert!(!st.lost_events && st.can_update_incrementally);
+    }
+
+    #[test]
+    fn nothing_to_update_without_an_analysis() {
+        let err = manager().update(recorder().0).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::NotFound);
+        assert!(!manager().watch_status().unwrap().watching);
     }
 }

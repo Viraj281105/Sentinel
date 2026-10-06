@@ -1,5 +1,6 @@
 import { ScanSearch } from "lucide-react";
 import { DriveCard } from "../components/DriveCard";
+import { FreshnessBanner } from "../components/FreshnessBanner";
 import { ScanProgressView, ScanResults } from "../components/ScanResults";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
 import { ipc } from "../lib/ipc";
@@ -9,7 +10,7 @@ import { useScan } from "../lib/useScan";
 export function Storage() {
   const drives = useCommand(ipc.listDrives);
   const trends = useCommand(ipc.driveTrends);
-  const { state: scan, start, cancel } = useScan();
+  const { state: scan, start, update, cancel } = useScan();
   const busy = !scan.loaded || scan.running !== null;
 
   return (
@@ -52,6 +53,14 @@ export function Storage() {
       <div className="mt-6 space-y-4">
         {scan.error && <ErrorNote message={scan.error} />}
         {scan.running && <ScanProgressView run={scan.running} onCancel={(id) => void cancel(id)} />}
+        {!scan.running && scan.last && (
+          <FreshnessBanner
+            scanId={scan.last.scanId}
+            finishedAtMs={scan.last.finishedAtMs}
+            busy={busy}
+            onUpdate={() => void update(scan.last?.root ?? "")}
+          />
+        )}
         {!scan.running && scan.last && <ScanResults last={scan.last} />}
         {scan.loaded && !scan.running && !scan.last && (
           <Panel title="What is using the space">

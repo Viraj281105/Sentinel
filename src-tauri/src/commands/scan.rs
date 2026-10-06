@@ -6,7 +6,7 @@ use super::error::CommandError;
 use crate::AppState;
 use crate::scans::{
     DirListing, FAILED_EVENT, FINISHED_EVENT, LargeFileView, PROGRESS_EVENT, ScanEvents,
-    ScanFailedEvent, ScanFinishedEvent, ScanProgressEvent, ScanStatus,
+    ScanFailedEvent, ScanFinishedEvent, ScanProgressEvent, ScanStatus, WatchStatus,
 };
 
 struct TauriEvents(AppHandle);
@@ -42,6 +42,21 @@ pub(crate) fn start_scan(
     state
         .scans
         .start(&root, ScanOptions::default(), TauriEvents(app))
+}
+
+/// Bring the latest analysis up to date. Re-reads only the folders the watcher saw change
+/// when that is reliable; otherwise analyzes the whole root again. Same events as
+/// `start_scan`.
+#[tauri::command]
+pub(crate) fn update_scan(app: AppHandle, state: State<'_, AppState>) -> Result<u64, CommandError> {
+    state.scans.update(TauriEvents(app))
+}
+
+/// How many folders changed since the latest analysis, and whether an update can be
+/// incremental.
+#[tauri::command]
+pub(crate) fn watch_status(state: State<'_, AppState>) -> Result<WatchStatus, CommandError> {
+    state.scans.watch_status()
 }
 
 #[tauri::command]

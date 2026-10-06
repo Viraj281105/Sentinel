@@ -20,6 +20,7 @@ import type { ProviderInfo } from "../bindings/ProviderInfo";
 import type { QuarantineContents } from "../bindings/QuarantineContents";
 import type { RuntimeInventory } from "../bindings/RuntimeInventory";
 import type { SoftwareInventory } from "../bindings/SoftwareInventory";
+import type { WatchStatus } from "../bindings/WatchStatus";
 import type { WslInventory } from "../bindings/WslInventory";
 import type { ScanStatus } from "../bindings/ScanStatus";
 
@@ -30,6 +31,8 @@ export const ipc = {
   listDrives: () => invoke<Drive[]>("list_drives"),
   driveTrends: () => invoke<DriveTrend[]>("drive_trends"),
   startScan: (root: string) => invoke<number>("start_scan", { root }),
+  updateScan: () => invoke<number>("update_scan"),
+  watchStatus: () => invoke<WatchStatus>("watch_status"),
   cancelScan: (id: number) => invoke<boolean>("cancel_scan", { id }),
   scanStatus: () => invoke<ScanStatus>("scan_status"),
   scanListing: (scanId: number, node: number) => invoke<DirListing>("scan_listing", { scanId, node }),

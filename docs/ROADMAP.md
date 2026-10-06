@@ -59,7 +59,8 @@ Read-only inspection first (this machine has Docker 29.x and two WSL2 distros). 
 Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth history, anomaly attribution.
 
 1. ✅ Spike (docs/spikes/PHASE7_CHANGE_TRACKING.md): unelevated, the USN journal's metadata is readable but its records are not; `ReadDirectoryChangesW` lost no events with a fast reader and lost whole intervals when the reader stalled. Decision: watch with `ReadDirectoryChangesW` as a dirty-directory hint, rescan on overflow, and use the journal position to skip unchanged volumes
-2. ✅ Folder watcher and incremental rescan in `sentinel-scanner` (crate level): overlapped watch with the first request issued before `start` returns, reader that only enqueues, dirty-directory set with noisy-folder coalescing, overflow and loss collapse to `root_dirty`; incremental rescan verified equal to a fresh scan. Not yet wired into the app
+2. ✅ Folder watcher and incremental rescan in `sentinel-scanner` (crate level): overlapped watch with the first request issued before `start` returns, reader that only enqueues, dirty-directory set with noisy-folder coalescing, overflow and loss collapse to `root_dirty`; incremental rescan verified equal to a fresh scan. Wired into the app (see 3)
+3. ✅ App wiring: watcher starts with each analysis, the Storage page shows how many folders changed and offers Update (incremental when reliable, otherwise a full analysis); never rescans by itself. The last tree is retained in memory up to 400,000 nodes
 
 ## Phase 8 – AI abstraction ⬜
 `AiProvider` trait, Ollama + OpenAI-compatible, redaction layer, schema validation, NL → structured query.
@@ -78,11 +79,9 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 7, next: wire the watcher into the app. A per-root watch lifecycle in app state, a
-rescan policy (debounce, rescan only when a root has changes, full scan on `root_dirty`),
-persisting scan trees so the unelevated USN journal position can skip unchanged volumes at
-startup, and a status line on the Storage page. Then growth history and anomaly
-attribution.
+Phase 7, next: growth history (per-folder size over time from saved analyses) and anomaly
+attribution ("what grew since last week"). Deferred from the watcher work: persisting trees
+across restarts and the startup USN-journal check to skip unchanged volumes.
 
 ## Completed first milestone (historical)
 
