@@ -214,16 +214,41 @@ impl Quarantine {
         Ok(self.root.join(operation_id))
     }
 
+    /// Read an operation's record. The folder is the authority on which operation this is:
+    /// a record that names a different operation than the folder holding it is refused, so
+    /// that restoring or purging one operation can never act on another's items.
+    ///
+    /// Entries still marked `Pending` whose item is nevertheless present were moved just
+    /// before a crash could update the record; they are reported as quarantined so they can
+    /// be restored and eventually purged instead of being stranded.
     fn read_manifest(dir: &Path) -> Result<Manifest, QuarantineError> {
         let path = dir.join(MANIFEST);
         let text = fs::read_to_string(&path).map_err(io_err(&path))?;
-        let m: Manifest = serde_json::from_str(&text)
+        let mut m: Manifest = serde_json::from_str(&text)
             .map_err(|e| QuarantineError::BadManifest(format!("{}: {e}", path.display())))?;
         if m.version != MANIFEST_VERSION {
             return Err(QuarantineError::BadManifest(format!(
                 "unsupported manifest version {}",
                 m.version
             )));
+        }
+        let folder = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if !m.operation_id.eq_ignore_ascii_case(&folder) {
+            return Err(QuarantineError::BadManifest(format!(
+                "{} belongs to operation {}, not {folder}; it was ignored",
+                path.display(),
+                m.operation_id
+            )));
+        }
+        for e in &mut m.entries {
+            if e.status == EntryStatus::Pending
+                && fs::symlink_metadata(dir.join(e.index.to_string())).is_ok()
+            {
+                e.status = EntryStatus::Quarantined;
+            }
         }
         Ok(m)
     }
@@ -630,7 +655,15 @@ impl Quarantine {
         let (ops, problems) = self.operations()?;
         report.errors.extend(problems);
         for mut m in ops.into_iter().filter(|m| m.expires_at_ms <= ctx.now_ms) {
-            let op_dir = self.operation_dir(&m.operation_id)?;
+            // A folder whose name cannot be an operation id is reported, not allowed to
+            // stop the other operations from expiring.
+            let op_dir = match self.operation_dir(&m.operation_id) {
+                Ok(d) => d,
+                Err(e) => {
+                    report.errors.push(e.to_string());
+                    continue;
+                }
+            };
             let doomed: Vec<usize> = m
                 .entries
                 .iter()

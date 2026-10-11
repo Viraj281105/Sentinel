@@ -737,3 +737,168 @@ mod projects {
         assert_eq!(pv.eligible_items, 0);
     }
 }
+
+/// Rewrite an operation's record in place, as a damaged or tampered file might look.
+fn edit_manifest(f: &Fx, op: &str, edit: impl FnOnce(&mut sentinel_quarantine::Manifest)) {
+    let path = f.q.root().join(op).join("manifest.json");
+    let mut m: sentinel_quarantine::Manifest =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    edit(&mut m);
+    fs::write(&path, serde_json::to_vec_pretty(&m).unwrap()).unwrap();
+}
+
+#[test]
+fn a_record_naming_another_operation_cannot_make_purge_or_restore_act_on_that_operation() {
+    let f = fx();
+    let t0 = now_ms();
+    let mut log = Log::new();
+    f.q.quarantine(
+        &f.policy,
+        &f.provider,
+        &[f.temp.join("olddir")],
+        &ctx("op-a", t0),
+        &mut sink(&mut log),
+    )
+    .unwrap();
+    f.q.quarantine(
+        &f.policy,
+        &f.provider,
+        &[f.temp.join("old.log")],
+        &ctx("op-b", t0 + 10 * DAY_MS),
+        &mut sink(&mut log),
+    )
+    .unwrap();
+    // op-a's record now claims to be op-b (and to have expired long ago).
+    edit_manifest(&f, "op-a", |m| {
+        m.operation_id = "op-b".into();
+        m.expires_at_ms = 0;
+    });
+
+    let (ops, problems) = f.q.operations().unwrap();
+    assert_eq!(
+        ops.iter()
+            .map(|m| m.operation_id.as_str())
+            .collect::<Vec<_>>(),
+        ["op-b"]
+    );
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.contains("belongs to operation op-b")),
+        "{problems:?}"
+    );
+
+    let report =
+        f.q.purge_expired(&ctx("op-purge", t0 + 15 * DAY_MS), &mut sink(&mut log))
+            .unwrap();
+    assert_eq!(
+        report.operations_purged, 0,
+        "op-b is not expired and op-a's record is not trusted"
+    );
+    assert!(f.q.root().join("op-b").join("0").exists(), "op-b survived");
+    assert!(f.q.root().join("op-a").join("0").exists(), "op-a untouched");
+    assert!(matches!(
+        f.q.restore(&f.policy, "op-a", 0, &ctx("op-r", t0), &mut sink(&mut log)),
+        Err(QuarantineError::BadManifest(_))
+    ));
+}
+
+#[test]
+fn one_unusable_folder_does_not_stop_other_operations_from_expiring() {
+    let f = fx();
+    let t0 = now_ms();
+    let mut log = Log::new();
+    f.q.quarantine(
+        &f.policy,
+        &f.provider,
+        &[f.temp.join("old.log")],
+        &ctx("op-ok", t0),
+        &mut sink(&mut log),
+    )
+    .unwrap();
+    // A folder whose name is not a valid operation id, with a record that agrees with it.
+    let bad = f.q.root().join("op bad");
+    fs::create_dir(&bad).unwrap();
+    let mut m: sentinel_quarantine::Manifest =
+        serde_json::from_slice(&fs::read(f.q.root().join("op-ok").join("manifest.json")).unwrap())
+            .unwrap();
+    m.operation_id = "op bad".into();
+    m.expires_at_ms = 0;
+    fs::write(bad.join("manifest.json"), serde_json::to_vec(&m).unwrap()).unwrap();
+
+    let report =
+        f.q.purge_expired(&ctx("op-purge", t0 + 20 * DAY_MS), &mut sink(&mut log))
+            .unwrap();
+    assert_eq!(report.operations_purged, 1, "{:?}", report.errors);
+    assert!(!f.q.root().join("op-ok").exists());
+    assert!(
+        report.errors.iter().any(|e| e.contains("op bad")),
+        "{:?}",
+        report.errors
+    );
+    assert!(
+        bad.exists(),
+        "the odd folder is left for a person to look at"
+    );
+}
+
+#[test]
+fn an_item_moved_just_before_a_crash_is_still_listed_restorable_and_purgeable() {
+    let t0 = now_ms();
+
+    // Restorable.
+    let f = fx();
+    let mut log = Log::new();
+    f.q.quarantine(
+        &f.policy,
+        &f.provider,
+        &[f.temp.join("old.log")],
+        &ctx("op-1", t0),
+        &mut sink(&mut log),
+    )
+    .unwrap();
+    // The process died after the rename but before the record said so.
+    edit_manifest(&f, "op-1", |m| m.entries[0].status = EntryStatus::Pending);
+    let (ops, _) = f.q.operations().unwrap();
+    assert_eq!(ops[0].entries[0].status, EntryStatus::Quarantined);
+    f.q.restore(&f.policy, "op-1", 0, &ctx("op-r", t0), &mut sink(&mut log))
+        .unwrap();
+    assert_eq!(
+        fs::read(f.temp.join("old.log")).unwrap(),
+        b"old log contents"
+    );
+
+    // Purgeable once expired.
+    let g = fx();
+    let mut log = Log::new();
+    g.q.quarantine(
+        &g.policy,
+        &g.provider,
+        &[g.temp.join("old.log")],
+        &ctx("op-2", t0),
+        &mut sink(&mut log),
+    )
+    .unwrap();
+    edit_manifest(&g, "op-2", |m| m.entries[0].status = EntryStatus::Pending);
+    let report =
+        g.q.purge_expired(&ctx("op-p", t0 + 15 * DAY_MS), &mut sink(&mut log))
+            .unwrap();
+    assert_eq!(report.operations_purged, 1, "{:?}", report.errors);
+    assert!(!g.q.root().join("op-2").exists());
+
+    // An entry that really was never moved stays pending.
+    let h = fx();
+    let mut log = Log::new();
+    h.q.quarantine(
+        &h.policy,
+        &h.provider,
+        &[h.temp.join("old.log"), h.temp.join("olddir")],
+        &ctx("op-3", t0),
+        &mut sink(&mut log),
+    )
+    .unwrap();
+    edit_manifest(&h, "op-3", |m| m.entries[1].status = EntryStatus::Pending);
+    fs::remove_dir_all(h.q.root().join("op-3").join("1")).unwrap();
+    let (ops, _) = h.q.operations().unwrap();
+    assert_eq!(ops[0].entries[1].status, EntryStatus::Pending);
+}
