@@ -1,5 +1,6 @@
 import { Lock } from "lucide-react";
 import { AiSettingsPanel } from "../components/AiSettingsPanel";
+import { NotificationsPanel } from "../components/NotificationsPanel";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
 import { ipc } from "../lib/ipc";
 import { useCommand } from "../lib/useCommand";
@@ -32,6 +33,7 @@ export function Settings() {
             </ul>
           )}
         </Panel>
+        <NotificationsPanel />
         <AiSettingsPanel />
         <Panel title="Diagnostics">
           {info.status === "loading" && <Loading />}

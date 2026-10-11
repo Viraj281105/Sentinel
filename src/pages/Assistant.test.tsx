@@ -96,6 +96,7 @@ describe("AI settings in Settings", () => {
       if (cmd === "ai_settings") return off;
       if (cmd === "app_info") return { version: "0.1.0", debugBuild: true, logDir: "L", databasePath: "D", databaseError: null };
       if (cmd === "protected_locations") return [];
+      if (cmd === "preferences") return { lowSpaceAlerts: false };
       if (cmd === "set_ai_settings") {
         const { settings } = args as { settings: AiSettings };
         if (!settings.baseUrl.startsWith("http://127.")) throw { kind: "refused", message: "not on this computer" };

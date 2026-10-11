@@ -19,6 +19,7 @@ import type { JvmAnalysis } from "../bindings/JvmAnalysis";
 import type { LargeFileView } from "../bindings/LargeFileView";
 import type { ManifestEntry } from "../bindings/ManifestEntry";
 import type { PlanRunResponse } from "../bindings/PlanRunResponse";
+import type { Preferences } from "../bindings/Preferences";
 import type { PreviewResponse } from "../bindings/PreviewResponse";
 import type { ProjectSearch } from "../bindings/ProjectSearch";
 import type { ProtectedLocation } from "../bindings/ProtectedLocation";
@@ -52,6 +53,8 @@ export const ipc = {
     invoke<RecoveryPlan>("plan_recovery", { targetBytes, maxRisk }),
   runRecoveryPlan: (approved: { source: string; path: string }[]) =>
     invoke<PlanRunResponse>("run_recovery_plan", { approved }),
+  preferences: () => invoke<Preferences>("preferences"),
+  setPreferences: (preferences: Preferences) => invoke<Preferences>("set_preferences", { preferences }),
   aiSettings: () => invoke<AiSettings>("ai_settings"),
   setAiSettings: (settings: AiSettings) => invoke<AiSettings>("set_ai_settings", { settings }),
   askAssistant: (question: string, scanId?: number) => invoke<AskResponse>("ask_assistant", { question, scanId }),

@@ -93,8 +93,15 @@ Declarative plugin format, capability manifest, user approval flow.
 
 1. 📝 Design drafted in docs/PLUGINS.md: data-only plugins that can only describe cleanup candidates for the existing provider, planner and quarantine path; anchored roots, no `safe` risk, an age floor, a pinned hash and a live dry run in the approval screen. **Awaiting maintainer review; no code until the open questions there are answered** (the first is whether v1 needs plugins at all).
 
-## Phase 11 – Polish ⬜
+## Phase 11 – Polish 🚧
 UI polish, notifications, installer, startup integration.
+
+1. ✅ Installer: per-user NSIS installer (no administrator rights, Start menu entry, uninstaller; data and quarantine are kept on uninstall). Built locally: `Sentinel_0.1.0_x64-setup.exe`, 4.1 MiB. An on-demand/tag CI workflow builds it and keeps it with its SHA-256 as an artifact; it never publishes a release. Not code-signed (SmartScreen will warn), see docs/RELEASING.md. **Built but not yet installed and run on a clean account**
+2. ✅ Low-space alerts (Settings, off by default): while Sentinel is open it checks fixed drives every 15 minutes and shows one Windows notification when a drive drops under 10% free, naming only the drive and its free space; warns again only after a clear recovery (pure, tested decision logic). Uses the small Windows-only `tauri-winrt-notification` crate rather than the Tauri notification plugin, which pulled about 40 extra packages into the lockfile. **Delivery of the toast itself has not been seen on screen**
+3. ⬜ Run in the background (tray icon, start with Windows, close-to-tray) so alerts work while the window is closed. Needs a decision on the behavior and a visual check of the tray and window handling
+4. ⬜ Visual pass over the pages (keyboard focus, contrast, empty states) with the app running
+
+Also fixed here: `npm audit` reported a high-severity advisory in a build-time dependency (`source-map-js`), which would have failed the CI audit job; resolved with a three-line lockfile update.
 
 ## Phase 12 – Hardening & release ⬜
 Security review, fuzzing of path handling, performance budget, public-release docs.

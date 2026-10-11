@@ -1,0 +1,50 @@
+name: Installer
+
+# Builds the Windows installer on request or when a version tag is pushed, and keeps it as a
+# workflow artifact with its SHA-256. It does not publish a release: attaching the file to a
+# release is a deliberate, manual step. The installer is not code-signed, so Windows
+# SmartScreen will warn when it is first run (see docs/RELEASING.md).
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build the installer
+        run: npx tauri build --ci
+
+      - name: Checksum
+        shell: bash
+        run: |
+          cd target/release/bundle/nsis
+          ls -l
+          sha256sum *.exe | tee SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-windows-installer
+          path: |
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/nsis/SHA256SUMS.txt
+          if-no-files-found: error

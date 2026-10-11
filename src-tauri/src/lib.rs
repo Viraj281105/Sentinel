@@ -11,6 +11,8 @@ mod commands;
 mod db;
 mod history;
 mod logging;
+mod lowspace;
+mod prefs;
 mod query;
 mod recovery;
 mod scans;
@@ -30,6 +32,45 @@ pub(crate) struct AppState {
     pub scans: scans::ScanManager,
     /// The user's quarantine; `None` if the profile folder cannot be located.
     pub quarantine: Option<sentinel_quarantine::Quarantine>,
+}
+
+/// How often drives are checked for low space while Sentinel is running.
+const LOW_SPACE_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+/// Check the drives now and then and show a notification when one becomes low, if the
+/// person turned that on. Reads only drive capacity; the text names no folder or file.
+fn start_low_space_alerts(app: tauri::AppHandle) {
+    use tauri_winrt_notification::Toast;
+    // An installed app is identified by its bundle identifier. A development build is not
+    // registered with Windows, so it borrows PowerShell's identity to be allowed to toast.
+    let app_id = if cfg!(debug_assertions) {
+        Toast::POWERSHELL_APP_ID.to_owned()
+    } else {
+        app.config().identifier.clone()
+    };
+    let spawned = std::thread::Builder::new()
+        .name("sentinel-low-space".into())
+        .spawn(move || {
+            let mut tracker = lowspace::LowSpaceTracker::default();
+            loop {
+                let state = app.state::<AppState>();
+                let enabled = prefs::load(&state.db).is_ok_and(|p| p.low_space_alerts);
+                if enabled {
+                    match sentinel_scanner::drives::list_drives() {
+                        Ok(drives) => lowspace::check(true, &drives, &mut tracker, &mut |title, body| {
+                            if let Err(err) = Toast::new(&app_id).title(title).text1(body).show() {
+                                tracing::warn!(error = %err, "could not show the low-space notification");
+                            }
+                        }),
+                        Err(err) => tracing::warn!(error = %err, "low-space check could not list drives"),
+                    }
+                }
+                std::thread::sleep(LOW_SPACE_CHECK_EVERY);
+            }
+        });
+    if let Err(err) = spawned {
+        tracing::warn!(error = %err, "could not start the low-space check");
+    }
 }
 
 pub fn run() {
@@ -63,6 +104,7 @@ pub fn run() {
                 quarantine,
             });
             app.state::<AppState>().scans.resume_watch();
+            start_low_space_alerts(app.handle().clone());
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sentinel started");
             Ok(())
         })
@@ -80,6 +122,8 @@ pub fn run() {
             commands::history::folder_history,
             commands::history::anomaly_report,
             commands::query::query_saved_analysis,
+            commands::prefs::preferences,
+            commands::prefs::set_preferences,
             commands::ai::ai_settings,
             commands::ai::set_ai_settings,
             commands::ai::ask_assistant,

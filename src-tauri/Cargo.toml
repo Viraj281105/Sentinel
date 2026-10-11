@@ -25,6 +25,7 @@ sentinel-scanner = { path = "../crates/sentinel-scanner" }
 sentinel-store = { path = "../crates/sentinel-store" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-winrt-notification = "0.7"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 tracing = "0.1"
