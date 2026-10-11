@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn lists_builtin_providers() {
-        let ids: Vec<_> = cleanup_providers().iter().map(|p| p.id).collect();
+        let ids: Vec<_> = cleanup_providers().into_iter().map(|p| p.id).collect();
         assert_eq!(
             ids,
             [

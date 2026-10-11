@@ -2934,6 +2934,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-plugins"
+version = "0.1.0"
+dependencies = [
+ "sentinel-safety",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "sentinel-quarantine"
 version = "0.1.0"
 dependencies = [

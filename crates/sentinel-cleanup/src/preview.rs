@@ -323,8 +323,8 @@ pub fn preview(
                 item.decision = Decision::Skipped {
                     reason: info
                         .note
-                        .unwrap_or("this cleanup type is analysis only")
-                        .to_owned(),
+                        .clone()
+                        .unwrap_or_else(|| "this cleanup type is analysis only".to_owned()),
                 };
             }
             items.push(item);

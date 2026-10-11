@@ -55,21 +55,37 @@ impl From<RiskLevel> for Risk {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ProviderInfo {
-    pub id: &'static str,
-    pub name: &'static str,
+    pub id: String,
+    pub name: String,
     pub category: Category,
     pub risk: Risk,
     /// What the items are.
-    pub description: &'static str,
+    pub description: String,
     /// What happens if they are removed, and whether they come back.
-    pub on_removal: &'static str,
+    pub on_removal: String,
     /// Items with anything modified more recently than this are never eligible.
     pub min_age_days: u32,
     /// False for analysis-only providers: they are previewed but nothing is ever
     /// eligible, and the executor refuses them.
     pub can_clean: bool,
     /// Why an analysis-only provider cannot clean, or other context worth showing.
-    pub note: Option<&'static str>,
+    pub note: Option<String>,
+    /// Set when the provider comes from a plugin rather than being built in, so that
+    /// everything shown about it can say who wrote it.
+    pub plugin: Option<PluginLabel>,
+}
+
+/// Who wrote a plugin-provided cleanup type. Shown wherever its items appear.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PluginLabel {
+    pub plugin_id: String,
+    pub plugin_name: String,
+    pub author: String,
+    pub version: String,
+    /// SHA-256 of the approved manifest, so two different files are never confused.
+    pub sha256: String,
 }
 
 /// A source of cleanup candidates.

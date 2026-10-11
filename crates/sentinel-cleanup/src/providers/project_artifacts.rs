@@ -115,21 +115,25 @@ impl ProjectArtifacts {
 impl CleanupProvider for ProjectArtifacts {
     fn info(&self) -> ProviderInfo {
         ProviderInfo {
-            id: "project-artifacts",
-            name: "Rebuildable folders in inactive projects",
+            id: "project-artifacts".into(),
+            name: "Rebuildable folders in inactive projects".into(),
             category: Category::DeveloperDependencies,
             risk: RiskLevel::MediumRisk.into(),
             description: "node_modules, Python virtual environments and build output inside \
-                          projects nothing has changed in for 90 days.",
+                          projects nothing has changed in for 90 days."
+                .into(),
             on_removal: "The project needs a reinstall or rebuild before it runs again \
                          (npm install, recreate the virtual environment, cargo build, and so \
-                         on). Your source code is never touched.",
+                         on). Your source code is never touched."
+                .into(),
             min_age_days: INACTIVE_DAYS,
             can_clean: true,
             note: Some(
                 "Folders Git tracks are never touched, and projects changed in the last 90 \
-                 days are skipped.",
+                 days are skipped."
+                    .into(),
             ),
+            plugin: None,
         }
     }
 

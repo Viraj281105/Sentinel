@@ -56,16 +56,17 @@ impl PackageCache {
 
 impl CleanupProvider for PackageCache {
     fn info(&self) -> ProviderInfo {
-        let base = |id, name, description, on_removal| ProviderInfo {
-            id,
-            name,
+        let base = |id: &str, name: &str, description: &str, on_removal: &str| ProviderInfo {
+            id: id.to_owned(),
+            name: name.to_owned(),
             category: Category::PackageCaches,
             risk: RiskLevel::Safe.into(),
-            description,
-            on_removal,
+            description: description.to_owned(),
+            on_removal: on_removal.to_owned(),
             min_age_days: 1,
             can_clean: true,
             note: None,
+            plugin: None,
         };
         match self.kind {
             CacheKind::Npm => base(
@@ -97,7 +98,8 @@ impl CleanupProvider for PackageCache {
                 note: Some(
                     "pnpm's store is hard-linked into every project's node_modules, so moving \
                      it would free little space. Run `pnpm store prune` to remove unused \
-                     packages safely.",
+                     packages safely."
+                        .to_owned(),
                 ),
                 ..base(
                     "pnpm-store",

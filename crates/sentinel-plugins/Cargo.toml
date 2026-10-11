@@ -1,0 +1,18 @@
+[package]
+name = "sentinel-plugins"
+description = "Declarative plugin manifests for Sentinel: strict parsing and validation, no I/O"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sentinel-safety = { path = "../sentinel-safety" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
