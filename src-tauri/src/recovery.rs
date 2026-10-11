@@ -12,12 +12,14 @@ use sentinel_cleanup::providers::ProjectArtifacts;
 use sentinel_cleanup::{
     Candidate, CleanupProvider, Plan, PreviewLimits, Risk, candidates_from_preview, plan, preview,
 };
+use sentinel_quarantine::Quarantine;
 use sentinel_safety::Policy;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::commands::error::{CommandError, ErrorKind};
-use crate::commands::quarantine::MAX_PROJECTS;
+use crate::commands::quarantine::{CleanupRunResponse, MAX_ITEMS, MAX_PROJECTS, run_with};
+use crate::db::{Db, now_ms};
 
 /// What one source offered, so a person can see what the plan was drawn from.
 #[derive(Debug, Clone, Serialize, TS)]
@@ -43,8 +45,6 @@ pub struct RecoveryPlan {
     pub considered: Vec<Considered>,
     #[ts(type = "number")]
     pub generated_at_ms: i64,
-    /// Project folders the project-artifact entries came from (for running those entries).
-    pub projects: Vec<String>,
 }
 
 /// Preview every provider and collect its eligible items.
@@ -111,17 +111,10 @@ pub(crate) fn build(
     plan(&[], target_bytes, max_risk)
         .map_err(|e| CommandError::new(ErrorKind::InvalidInput, format!("{e}.")))?;
     let (mut candidates, mut considered) = gather(policy, providers, now_ms);
-    let mut projects = Vec::new();
     if !project_paths.is_empty() {
         let provider = ProjectArtifacts::for_projects(project_paths, now_ms);
         let boxed: Vec<Box<dyn CleanupProvider>> = vec![Box::new(provider)];
         let (c, mut cons) = gather(policy, &boxed, now_ms);
-        if c.iter().any(|x| x.bytes > 0) {
-            projects = project_paths
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect();
-        }
         candidates.extend(c);
         considered.append(&mut cons);
     } else {
@@ -143,8 +136,114 @@ pub(crate) fn build(
         plan,
         considered,
         generated_at_ms: now_ms,
-        projects,
     })
+}
+
+/// One approved item of a plan: where it came from and which item it is.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApprovedItem {
+    pub source: String,
+    pub path: String,
+}
+
+/// The outcome for one source's items. Each source is its own quarantine operation with its
+/// own audit records; one failing does not stop the others.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RunPart {
+    pub source: String,
+    pub source_name: String,
+    pub run: Option<CleanupRunResponse>,
+    /// Why nothing was moved for this source, if so.
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlanRunResponse {
+    pub parts: Vec<RunPart>,
+}
+
+const PROJECTS_SOURCE: &str = "project-artifacts";
+
+/// Move the approved items of a plan into quarantine, one operation per source, through the
+/// same executor the Cleanup page uses. The executor re-assesses every item immediately
+/// before moving it, so a stale plan, or an item that changed, is left in place.
+pub(crate) fn execute(
+    q: &Quarantine,
+    policy: &Policy,
+    db: &Db,
+    user: &str,
+    providers: &[Box<dyn CleanupProvider>],
+    project_paths: &[PathBuf],
+    approved: &[ApprovedItem],
+) -> Result<PlanRunResponse, CommandError> {
+    if approved.is_empty() || approved.len() > MAX_ITEMS {
+        return Err(CommandError::new(
+            ErrorKind::InvalidInput,
+            "Choose between 1 and 10,000 items to move.",
+        ));
+    }
+    // Group by source, keeping the order items were approved in.
+    let mut order: Vec<&str> = Vec::new();
+    for a in approved {
+        if !order.contains(&a.source.as_str()) {
+            order.push(&a.source);
+        }
+    }
+    let project_provider = (order.contains(&PROJECTS_SOURCE) && !project_paths.is_empty())
+        .then(|| ProjectArtifacts::for_projects(project_paths, now_ms()));
+    let mut parts = Vec::new();
+    for source in order {
+        let paths: Vec<String> = approved
+            .iter()
+            .filter(|a| a.source == source)
+            .map(|a| a.path.clone())
+            .collect();
+        let provider: Option<&dyn CleanupProvider> = if source == PROJECTS_SOURCE {
+            project_provider.as_ref().map(|p| p as &dyn CleanupProvider)
+        } else {
+            providers
+                .iter()
+                .find(|p| p.info().id == source)
+                .map(|p| p.as_ref())
+        };
+        let refuse = |why: &str| RunPart {
+            source: source.to_owned(),
+            source_name: source.to_owned(),
+            run: None,
+            error: Some(why.to_owned()),
+        };
+        let Some(provider) = provider else {
+            parts.push(refuse(if source == PROJECTS_SOURCE {
+                "The projects this plan used were not provided, so nothing was moved."
+            } else {
+                "Sentinel has no cleanup type with this name, so nothing was moved."
+            }));
+            continue;
+        };
+        let info = provider.info();
+        if !info.can_clean || info.risk > Risk::MediumRisk {
+            // Plans never contain these; refuse rather than trust the caller.
+            parts.push(refuse("This kind of item is never moved by a plan."));
+            continue;
+        }
+        let mut part = RunPart {
+            source: source.to_owned(),
+            source_name: info.name.to_owned(),
+            run: None,
+            error: None,
+        };
+        match run_with(q, policy, db, user, provider, &paths) {
+            Ok(r) => part.run = Some(r),
+            Err(e) => part.error = Some(e.message),
+        }
+        parts.push(part);
+    }
+    Ok(PlanRunResponse { parts })
 }
 
 #[cfg(test)]
@@ -160,7 +259,7 @@ mod tests {
 
     fn temp_with(files: &[(&str, usize, i64)]) -> (tempfile::TempDir, i64) {
         let dir = tempfile::tempdir().unwrap();
-        let now = 1_900_000_000_000i64;
+        let now = crate::db::now_ms();
         for (name, size, age_days) in files {
             let p = dir.path().join(name);
             std::fs::write(&p, vec![1u8; *size]).unwrap();
@@ -215,6 +314,145 @@ mod tests {
         assert!(!r.plan.reaches_target);
         assert!(r.plan.shortfall_bytes > 0);
         assert!(!r.plan.notes.is_empty());
+    }
+
+    fn run_plan(
+        dir: &tempfile::TempDir,
+        q: &Quarantine,
+        db: &Db,
+        now: i64,
+        approved: &[ApprovedItem],
+    ) -> Result<PlanRunResponse, CommandError> {
+        let policy = Policy::new(ProtectedSet::new());
+        let _ = now;
+        execute(q, &policy, db, "tester", &providers(dir), &[], approved)
+    }
+
+    fn item(source: &str, path: &std::path::Path) -> ApprovedItem {
+        ApprovedItem {
+            source: source.into(),
+            path: path.display().to_string(),
+        }
+    }
+
+    #[test]
+    fn running_a_plan_moves_only_the_approved_eligible_items_into_quarantine_and_audits_it() {
+        let (dir, now) = temp_with(&[("old.tmp", 200_000, 30), ("recent.tmp", 50_000, 0)]);
+        let qdir = tempfile::tempdir().unwrap();
+        let q = Quarantine::at(qdir.path().join("q"));
+        let db = Db::in_memory();
+        let policy = Policy::new(ProtectedSet::new());
+        let r = build(&policy, &providers(&dir), &[], now, 100_000, Risk::Safe).unwrap();
+        let approved: Vec<ApprovedItem> = r
+            .plan
+            .entries
+            .iter()
+            .map(|e| ApprovedItem {
+                source: e.source.clone(),
+                path: e.path.clone(),
+            })
+            .collect();
+        assert_eq!(approved.len(), 1);
+        let out = run_plan(&dir, &q, &db, now, &approved).unwrap();
+        assert_eq!(out.parts.len(), 1);
+        let run = out.parts[0].run.as_ref().unwrap();
+        assert!(out.parts[0].error.is_none());
+        assert_eq!(
+            run.manifest
+                .entries
+                .iter()
+                .filter(|e| matches!(e.status, sentinel_quarantine::EntryStatus::Quarantined))
+                .count(),
+            1
+        );
+        assert!(!dir.path().join("old.tmp").exists(), "moved out of TEMP");
+        assert!(
+            dir.path().join("recent.tmp").exists(),
+            "not in the plan, untouched"
+        );
+        // Moved, not deleted: the item is in quarantine and the operation is audited.
+        assert!(qdir.path().join("q").exists());
+        assert!(!db.lock().audit_records(10, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_item_that_became_ineligible_since_planning_is_left_in_place() {
+        // Both were old when planned; one was touched before the plan was run.
+        let (dir, now) = temp_with(&[("touched.tmp", 200_000, 30), ("untouched.tmp", 200_000, 30)]);
+        let qdir = tempfile::tempdir().unwrap();
+        let q = Quarantine::at(qdir.path().join("q"));
+        let db = Db::in_memory();
+        let touched = dir.path().join("touched.tmp");
+        let untouched = dir.path().join("untouched.tmp");
+        std::fs::File::options()
+            .write(true)
+            .open(&touched)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now())
+            .unwrap();
+        let out = run_plan(
+            &dir,
+            &q,
+            &db,
+            now,
+            &[item("user-temp", &touched), item("user-temp", &untouched)],
+        )
+        .unwrap();
+        assert!(out.parts[0].run.is_some());
+        assert!(touched.exists(), "the changed item stays where it is");
+        assert!(!untouched.exists(), "the control item does move");
+    }
+
+    #[test]
+    fn unknown_sources_projects_not_provided_and_uncleanable_kinds_move_nothing() {
+        let (dir, now) = temp_with(&[("old.tmp", 1_000, 30)]);
+        let qdir = tempfile::tempdir().unwrap();
+        let q = Quarantine::at(qdir.path().join("q"));
+        let db = Db::in_memory();
+        let target = dir.path().join("old.tmp");
+        let out = run_plan(
+            &dir,
+            &q,
+            &db,
+            now,
+            &[
+                item("made-up", &target),
+                item("project-artifacts", &target),
+                item("pnpm-store", &target),
+            ],
+        )
+        .unwrap();
+        assert_eq!(out.parts.len(), 3);
+        assert!(
+            out.parts
+                .iter()
+                .all(|p| p.run.is_none() && p.error.is_some())
+        );
+        assert!(target.exists());
+        assert!(db.lock().audit_records(10, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn empty_and_oversized_approvals_are_refused() {
+        let (dir, now) = temp_with(&[]);
+        let qdir = tempfile::tempdir().unwrap();
+        let q = Quarantine::at(qdir.path().join("q"));
+        let db = Db::in_memory();
+        assert_eq!(
+            run_plan(&dir, &q, &db, now, &[]).unwrap_err().kind,
+            ErrorKind::InvalidInput
+        );
+        let many: Vec<ApprovedItem> = (0..=MAX_ITEMS)
+            .map(|i| ApprovedItem {
+                source: "user-temp".into(),
+                path: format!("x{i}"),
+            })
+            .collect();
+        assert_eq!(
+            run_plan(&dir, &q, &db, now, &many).unwrap_err().kind,
+            ErrorKind::InvalidInput
+        );
+        assert!(!qdir.path().join("q").exists());
     }
 
     #[test]

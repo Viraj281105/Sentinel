@@ -1,9 +1,13 @@
+import { Archive } from "lucide-react";
 import { useState } from "react";
+import type { PlanRunResponse } from "../bindings/PlanRunResponse";
 import type { Risk } from "../bindings/Risk";
 import type { RecoveryPlan } from "../bindings/RecoveryPlan";
 import { formatBytes } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
 import { RISK } from "../lib/risk";
+import { ConfirmMove } from "./ConfirmMove";
+import { RunResult } from "./PreviewResult";
 import { ErrorNote, Panel } from "./ui";
 
 const UNITS = { MB: 1024 ** 2, GB: 1024 ** 3 } as const;
@@ -13,10 +17,10 @@ const CEILINGS: Risk[] = ["safe", "lowRisk", "mediumRisk"];
 
 /**
  * "Free up about N": a proposal drawn from what the cleanup types below would offer, lowest
- * risk first, with the reason for every item. It changes nothing; to act on it, preview and
- * confirm the matching cleanup type below.
+ * risk first, with the reason for every item. Nothing moves until the person confirms the
+ * full list; the executor then re-checks each item.
  */
-export function RecoveryPlanPanel() {
+export function RecoveryPlanPanel({ onMoved }: { onMoved: () => void }) {
   const [amount, setAmount] = useState("10");
   const [unit, setUnit] = useState<Unit>("GB");
   const [ceiling, setCeiling] = useState<Risk>("safe");
@@ -45,7 +49,7 @@ export function RecoveryPlanPanel() {
     <Panel title="Free up space">
       <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
         Say how much you want back and the highest risk you accept. Sentinel proposes items from the cleanup types
-        below, safest first, and explains each one. Nothing is removed from here.
+        below, safest first, and explains each one. Nothing moves until you confirm.
       </p>
       <form
         className="flex flex-wrap items-center gap-3 text-sm"
@@ -96,13 +100,32 @@ export function RecoveryPlanPanel() {
           <ErrorNote message={error} />
         </div>
       )}
-      {result && <PlanView r={result} />}
+      {result && <PlanView key={result.generatedAtMs} r={result} onMoved={onMoved} />}
     </Panel>
   );
 }
 
-function PlanView({ r }: { r: RecoveryPlan }) {
+function PlanView({ r, onMoved }: { r: RecoveryPlan; onMoved: () => void }) {
   const p = r.plan;
+  const [confirming, setConfirming] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [ran, setRan] = useState<PlanRunResponse | null>(null);
+
+  async function move() {
+    setRunning(true);
+    setRunError(null);
+    try {
+      setRan(await ipc.runRecoveryPlan(p.entries.map((e) => ({ source: e.source, path: e.path }))));
+      onMoved();
+    } catch (e) {
+      setRunError(describeError(e));
+    } finally {
+      setRunning(false);
+      setConfirming(false);
+    }
+  }
+
   return (
     <div className="mt-4 space-y-4 text-sm">
       <p>
@@ -150,6 +173,40 @@ function PlanView({ r }: { r: RecoveryPlan }) {
           ))}
         </ol>
       )}
+      {p.entries.length > 0 && !ran && (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+        >
+          <Archive className="size-4" aria-hidden />
+          Move {p.entries.length} {p.entries.length === 1 ? "item" : "items"} to quarantine…
+        </button>
+      )}
+      {runError && <ErrorNote message={runError} />}
+      {ran && (
+        <div className="space-y-2">
+          {ran.parts.map((part) => (
+            <div key={part.source}>
+              <p className="text-xs font-medium text-slate-500">{part.sourceName}</p>
+              {part.run && <RunResult result={part.run} />}
+              {part.error && <ErrorNote message={`Nothing was moved: ${part.error}`} />}
+            </div>
+          ))}
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            This plan is now out of date. Make a new one to see what is left.
+          </p>
+        </div>
+      )}
+      {confirming && (
+        <ConfirmMove
+          providerName="this plan"
+          items={p.entries}
+          busy={running}
+          onConfirm={() => void move()}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
       <div>
         <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">What was looked at</h3>
         <ul className="space-y-0.5 text-xs text-slate-500 dark:text-slate-400">
@@ -162,8 +219,8 @@ function PlanView({ r }: { r: RecoveryPlan }) {
           ))}
         </ul>
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          Only items that are old enough, not in use, not protected and fully verified are ever offered. To act on
-          this plan, preview the matching cleanup type below and confirm; each item is checked again then.
+          Only items that are old enough, not in use, not protected and fully verified are ever offered. Moving
+          them needs your confirmation, and each item is checked again just before it moves.
         </p>
       </div>
     </div>

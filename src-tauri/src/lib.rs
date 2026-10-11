@@ -100,6 +100,7 @@ pub fn run() {
             commands::quarantine::project_cleanup_run,
             commands::cleanup::project_cleanup_preview,
             commands::recovery::plan_recovery,
+            commands::recovery::run_recovery_plan,
             commands::quarantine::quarantine_contents,
             commands::quarantine::quarantine_restore,
         ])

@@ -2,8 +2,4 @@
 import type { Considered } from "./Considered";
 import type { Plan } from "./Plan";
 
-export type RecoveryPlan = { plan: Plan, considered: Array<Considered>, generatedAtMs: number, 
-/**
- * Project folders the project-artifact entries came from (for running those entries).
- */
-projects: Array<string>, };
+export type RecoveryPlan = { plan: Plan, considered: Array<Considered>, generatedAtMs: number, };

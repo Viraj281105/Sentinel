@@ -10,7 +10,6 @@ const MB = 1024 ** 2;
 function plan(over: Partial<RecoveryPlan["plan"]> = {}): RecoveryPlan {
   return {
     generatedAtMs: Date.now(),
-    projects: [],
     considered: [
       { source: "user-temp", name: "Temporary files", risk: "safe", eligibleItems: 2, eligibleBytes: 300 * MB, note: null },
       {
@@ -30,6 +29,7 @@ function plan(over: Partial<RecoveryPlan["plan"]> = {}): RecoveryPlan {
           source: "user-temp",
           sourceName: "Temporary files",
           path: String.raw`C:\Users\x\AppData\Local\Temp\big`,
+          kind: "folder",
           bytes: 200 * MB,
           risk: "safe",
           onRemoval: "Programs recreate what they need.",
@@ -40,6 +40,7 @@ function plan(over: Partial<RecoveryPlan["plan"]> = {}): RecoveryPlan {
           source: "user-temp",
           sourceName: "Temporary files",
           path: String.raw`C:\Users\x\AppData\Local\Temp\small`,
+          kind: "folder",
           bytes: 100 * MB,
           risk: "safe",
           onRemoval: "Programs recreate what they need.",
@@ -67,7 +68,7 @@ describe("RecoveryPlanPanel", () => {
       calls.push(args);
       return plan();
     });
-    render(<RecoveryPlanPanel />);
+    render(<RecoveryPlanPanel onMoved={() => {}} />);
     const amount = screen.getByLabelText("Amount");
     await userEvent.clear(amount);
     await userEvent.type(amount, "250");
@@ -82,7 +83,7 @@ describe("RecoveryPlanPanel", () => {
 
   it("offers no ceiling above medium risk", () => {
     mockIPC(() => plan());
-    render(<RecoveryPlanPanel />);
+    render(<RecoveryPlanPanel onMoved={() => {}} />);
     const options = screen.getAllByRole("option").map((o) => o.textContent);
     expect(options).toEqual(["MB", "GB", "Safe", "Low risk", "Medium risk"]);
   });
@@ -95,7 +96,7 @@ describe("RecoveryPlanPanel", () => {
         notes: ["A further 900 MB in 1 items is available at a higher risk. They are not included."],
       }),
     );
-    render(<RecoveryPlanPanel />);
+    render(<RecoveryPlanPanel onMoved={() => {}} />);
     await userEvent.click(screen.getByRole("button", { name: "Make a plan" }));
     expect(await screen.findByText(/700 MB short/)).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent("not included");
@@ -105,7 +106,7 @@ describe("RecoveryPlanPanel", () => {
     mockIPC(() => {
       throw { kind: "invalidInput", message: "plans can include at most medium-risk items." };
     });
-    render(<RecoveryPlanPanel />);
+    render(<RecoveryPlanPanel onMoved={() => {}} />);
     const amount = screen.getByLabelText("Amount");
     await userEvent.clear(amount);
     await userEvent.type(amount, "0");

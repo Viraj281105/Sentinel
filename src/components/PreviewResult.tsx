@@ -31,7 +31,7 @@ function decisionText(d: Decision): string {
 
 type Filter = "eligible" | "kept" | "all";
 
-function RunResult({ result }: { result: CleanupRunResponse }) {
+export function RunResult({ result }: { result: CleanupRunResponse }) {
   const entries = result.manifest.entries;
   const moved = entries.filter((e) => e.status.state === "quarantined");
   const left = entries.filter((e) => e.status.state !== "quarantined");

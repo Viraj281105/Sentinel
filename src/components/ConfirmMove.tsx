@@ -5,7 +5,7 @@ import { formatBytes } from "../lib/format";
 
 interface Props {
   providerName: string;
-  items: PreviewItem[];
+  items: Pick<PreviewItem, "path" | "bytes" | "kind">[];
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;

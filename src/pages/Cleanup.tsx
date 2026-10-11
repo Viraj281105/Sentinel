@@ -94,7 +94,7 @@ export function Cleanup() {
         </div>
       </div>
       <div className="mb-4">
-        <RecoveryPlanPanel />
+        <RecoveryPlanPanel onMoved={() => setVersion((v) => v + 1)} />
       </div>
       {providers.status === "loading" && <Loading />}
       {providers.status === "error" && <ErrorNote message={providers.message} />}

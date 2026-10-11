@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::{Decision, Preview, Risk};
+use crate::{Decision, ItemKind, Preview, Risk};
 
 /// One thing that could be removed, as judged by a provider's preview.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +28,7 @@ pub struct Candidate {
     pub source: String,
     pub source_name: String,
     pub path: String,
+    pub kind: ItemKind,
     pub bytes: u64,
     pub risk: Risk,
     /// What removal costs and whether the item comes back.
@@ -46,6 +47,7 @@ pub fn candidates_from_preview(p: &Preview) -> Vec<Candidate> {
             source: p.provider.id.to_owned(),
             source_name: p.provider.name.to_owned(),
             path: i.path.clone(),
+            kind: i.kind,
             bytes: i.bytes,
             risk: p.provider.risk,
             on_removal: p.provider.on_removal.to_owned(),
@@ -68,6 +70,7 @@ pub struct PlanEntry {
     pub source: String,
     pub source_name: String,
     pub path: String,
+    pub kind: ItemKind,
     #[ts(type = "number")]
     pub bytes: u64,
     pub risk: Risk,
@@ -224,6 +227,7 @@ pub fn plan(
                 source: c.source,
                 source_name: c.source_name,
                 path: c.path,
+                kind: c.kind,
                 bytes: c.bytes,
                 risk: c.risk,
                 on_removal: c.on_removal,
@@ -293,6 +297,7 @@ mod tests {
             source: "p".into(),
             source_name: "Provider".into(),
             path: path.into(),
+            kind: ItemKind::Folder,
             bytes: mb * MB,
             risk,
             on_removal: "comes back".into(),

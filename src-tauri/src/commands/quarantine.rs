@@ -16,7 +16,7 @@ use crate::db::{Db, now_ms};
 use crate::{AppState, audit};
 
 /// Most items one operation may move; far above any real preview.
-const MAX_ITEMS: usize = 10_000;
+pub(crate) const MAX_ITEMS: usize = 10_000;
 
 impl From<QuarantineError> for CommandError {
     fn from(err: QuarantineError) -> Self {
@@ -29,7 +29,7 @@ impl From<QuarantineError> for CommandError {
     }
 }
 
-fn quarantine(state: &AppState) -> Result<Quarantine, CommandError> {
+pub(crate) fn quarantine(state: &AppState) -> Result<Quarantine, CommandError> {
     state.quarantine.clone().ok_or_else(|| {
         CommandError::new(
             ErrorKind::System,
@@ -77,7 +77,7 @@ fn run(
     run_with(q, policy, db, user, provider.as_ref(), approved)
 }
 
-fn run_with(
+pub(crate) fn run_with(
     q: &Quarantine,
     policy: &Policy,
     db: &Db,
