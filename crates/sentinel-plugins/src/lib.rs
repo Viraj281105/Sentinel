@@ -9,8 +9,11 @@
 //! Everything here fails closed: unknown fields, unknown capabilities, odd characters, long
 //! text, paths that could escape or alias something else are all errors, never repaired.
 
+mod provider;
+
 use std::path::Path;
 
+pub use provider::{AnchorPaths, DeclarativeProvider};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 

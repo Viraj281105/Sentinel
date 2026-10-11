@@ -2937,10 +2937,13 @@ dependencies = [
 name = "sentinel-plugins"
 version = "0.1.0"
 dependencies = [
+ "sentinel-classify",
+ "sentinel-cleanup",
  "sentinel-safety",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 
