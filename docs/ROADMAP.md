@@ -93,8 +93,8 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 8 is complete. Candidates for next: a "stale folders" view built on the same query
-with no AI involved (change times now exist); the two items still open from Phase 7
+Phase 8 is complete, and the "Folders not changed lately" panel (Storage page, built on the
+same query with no AI) is done. Candidates for next: the two items still open from Phase 7
 (persist scan trees across restarts, startup USN-journal check); a first manual run of the
 assistant against a real local Ollama; then Phase 9, the deterministic recovery planner.
 

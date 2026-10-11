@@ -9,6 +9,7 @@ import type { SavedScan } from "../bindings/SavedScan";
 import type { ScanProgressEvent } from "../bindings/ScanProgressEvent";
 import { CATEGORY } from "../lib/categories";
 import { AnomalyPanel } from "./AnomalyPanel";
+import { StaleFolders } from "./StaleFolders";
 import { FolderHistory, GrowthHistory } from "./GrowthHistory";
 import { formatBytes, formatDateTime, formatDelta, percent } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
@@ -389,6 +390,9 @@ export function ScanResults({ last }: { last: SavedScan }) {
       </Panel>
       <Panel title="Largest folders">
         <FolderExplorer key={last.scanId} scanId={last.scanId} />
+      </Panel>
+      <Panel title="Folders not changed lately">
+        <StaleFolders key={last.scanId} scanId={last.scanId} />
       </Panel>
       <Panel title="Largest files">
         <LargestFiles scanId={last.scanId} />
