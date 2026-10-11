@@ -12,6 +12,7 @@ mod db;
 mod history;
 mod logging;
 mod query;
+mod recovery;
 mod scans;
 
 use std::path::PathBuf;
@@ -98,6 +99,7 @@ pub fn run() {
             commands::quarantine::cleanup_run,
             commands::quarantine::project_cleanup_run,
             commands::cleanup::project_cleanup_preview,
+            commands::recovery::plan_recovery,
             commands::quarantine::quarantine_contents,
             commands::quarantine::quarantine_restore,
         ])

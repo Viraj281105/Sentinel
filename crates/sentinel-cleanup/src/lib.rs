@@ -10,6 +10,7 @@
 //! candidate is validated by `sentinel-safety`, every item inside it is checked against
 //! the protected-path rules, and anything modified too recently is left alone.
 
+mod planner;
 mod preview;
 pub mod providers;
 
@@ -17,15 +18,16 @@ use std::path::{Path, PathBuf};
 
 use sentinel_classify::Category;
 use sentinel_safety::RiskLevel;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub use planner::{Candidate, Plan, PlanEntry, PlanError, candidates_from_preview, plan};
 pub use preview::{
     Decision, ItemKind, Preview, PreviewItem, PreviewLimits, RootReport, assess, preview,
 };
 
 /// Risk shown to users; mirrors [`RiskLevel`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum Risk {

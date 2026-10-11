@@ -79,8 +79,12 @@ Decisions recorded in docs/AI_POLICY.md (made 2026-10-06 under the maintainer's 
 
 4. ✅ Settings toggle and question box: AI is switched on only in Settings (store v6 `settings` table; model name, Ollama address checked to be on this computer at save time and again at use). `ask_assistant` redacts the question, asks the local model, serializes the validated query and runs it through the same `run_json` entry point. The AI Assistant page labels the answer "AI answered this", shows the exact redacted text sent, the plain-words search, and results with anything not applied stated first. Not exercised against a live Ollama in this environment (covered by a fake provider and the existing local-HTTP-server provider tests)
 
-## Phase 9 – Planner & recommendations ⬜
+## Phase 9 – Planner & recommendations 🚧
 Deterministic "recover N GB" planner with risk ceiling; explainability panel.
+
+1. ✅ Planner (`sentinel-cleanup::planner`, pure and deterministic): candidates are only items a provider's own preview judged eligible; the ceiling is at most medium risk (high and protected are refused and never offered); lowest risk tier first, a higher tier only when the lower is used up; inside a tier largest first, except the smallest item that finishes the plan, so overshoot is minimal; duplicates and nested items counted once, lower risk winning; input order never changes the result. Every entry carries the reason it was chosen; a short plan says by how much and what exists above the ceiling
+2. ✅ "Free up space" panel on the Cleanup page (`plan_recovery`): previews every cleanable provider plus the saved projects (re-inspected, inactive only, never Git-tracked), shows the plan with per-item reasons, what removal costs, and what each source offered. Read-only
+3. ⬜ Run a plan: approve it and execute through the existing quarantine path (per provider, items re-validated), with one confirmation listing every item. Until then a plan is acted on by previewing and confirming the matching cleanup type
 
 ## Phase 10 – Plugins ⬜
 Declarative plugin format, capability manifest, user approval flow.
@@ -96,7 +100,7 @@ Security review, fuzzing of path handling, performance budget, public-release do
 Phase 8 is complete, and the "Folders not changed lately" panel (Storage page, built on the
 same query with no AI) is done. Candidates for next: the two items still open from Phase 7
 (persist scan trees across restarts, startup USN-journal check); a first manual run of the
-assistant against a real local Ollama; then Phase 9, the deterministic recovery planner.
+assistant against a real local Ollama; then running an approved Phase 9 plan.
 
 ## Completed first milestone (historical)
 

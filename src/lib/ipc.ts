@@ -24,6 +24,8 @@ import type { ProtectedLocation } from "../bindings/ProtectedLocation";
 import type { ProviderInfo } from "../bindings/ProviderInfo";
 import type { QuarantineContents } from "../bindings/QuarantineContents";
 import type { QueryResult } from "../bindings/QueryResult";
+import type { RecoveryPlan } from "../bindings/RecoveryPlan";
+import type { Risk } from "../bindings/Risk";
 import type { RuntimeInventory } from "../bindings/RuntimeInventory";
 import type { SoftwareInventory } from "../bindings/SoftwareInventory";
 import type { WatchStatus } from "../bindings/WatchStatus";
@@ -45,6 +47,8 @@ export const ipc = {
   watchStatus: () => invoke<WatchStatus>("watch_status"),
   querySavedAnalysis: (scanId: number, queryJson: string) =>
     invoke<QueryResult>("query_saved_analysis", { scanId, queryJson }),
+  planRecovery: (targetBytes: number, maxRisk: Risk) =>
+    invoke<RecoveryPlan>("plan_recovery", { targetBytes, maxRisk }),
   aiSettings: () => invoke<AiSettings>("ai_settings"),
   setAiSettings: (settings: AiSettings) => invoke<AiSettings>("set_ai_settings", { settings }),
   askAssistant: (question: string, scanId?: number) => invoke<AskResponse>("ask_assistant", { question, scanId }),

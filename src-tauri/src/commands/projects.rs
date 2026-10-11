@@ -27,7 +27,7 @@ pub struct ProjectSearch {
     pub detection: Detection,
 }
 
-fn saved_searches(db: &Db) -> Result<Vec<ProjectSearch>, CommandError> {
+pub(crate) fn saved_searches(db: &Db) -> Result<Vec<ProjectSearch>, CommandError> {
     let rows = db.lock().project_searches()?;
     Ok(rows
         .into_iter()

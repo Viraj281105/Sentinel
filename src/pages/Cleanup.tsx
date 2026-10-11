@@ -2,21 +2,14 @@ import { Eye, Info, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import type { PreviewResponse } from "../bindings/PreviewResponse";
 import type { ProviderInfo } from "../bindings/ProviderInfo";
-import type { Risk } from "../bindings/Risk";
+import { RecoveryPlanPanel } from "../components/RecoveryPlanPanel";
 import { PreviewResult } from "../components/PreviewResult";
 import { QuarantinePanel } from "../components/QuarantinePanel";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
 import { CATEGORY } from "../lib/categories";
 import { describeError, ipc } from "../lib/ipc";
+import { RISK } from "../lib/risk";
 import { useCommand } from "../lib/useCommand";
-
-const RISK: Record<Risk, string> = {
-  safe: "Safe",
-  lowRisk: "Low risk",
-  mediumRisk: "Medium risk",
-  highRisk: "High risk",
-  protected: "Protected",
-};
 
 function ProviderCard({ info, onMoved }: { info: ProviderInfo; onMoved: () => void }) {
   const [state, setState] = useState<
@@ -99,6 +92,9 @@ export function Cleanup() {
             Files in use are skipped. Which programs or projects an item belongs to is not shown yet.
           </p>
         </div>
+      </div>
+      <div className="mb-4">
+        <RecoveryPlanPanel />
       </div>
       {providers.status === "loading" && <Loading />}
       {providers.status === "error" && <ErrorNote message={providers.message} />}
