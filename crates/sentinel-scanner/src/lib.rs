@@ -7,5 +7,7 @@ compile_error!("sentinel-scanner only supports Windows");
 pub mod dirent;
 pub mod drives;
 pub mod incremental;
+pub mod persist;
 pub mod scan;
+pub mod usn;
 pub mod watch;

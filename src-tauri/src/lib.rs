@@ -49,13 +49,15 @@ pub fn run() {
                     user.clone(),
                 );
             }
+            let snapshot_file = app.path().app_local_data_dir()?.join("scan-tree.bin");
             app.manage(AppState {
                 log_dir,
                 policy: Policy::for_system(),
                 scans: scans::ScanManager::new(
                     db.clone(),
                     std::sync::Arc::new(sentinel_classify::Classifier::for_system()),
-                ),
+                )
+                .with_snapshot_file(snapshot_file),
                 db,
                 user,
                 quarantine,

@@ -51,9 +51,20 @@ export function FreshnessBanner({
       ? `Sentinel stopped being able to watch this folder (${status.broken}), so the analysis may be out of date.`
       : "Some changes were missed, so the analysis may be out of date.";
     action = "Analyze again";
+  } else if (status.afterRestart?.state === "changedWhileClosed") {
+    text =
+      "Something on this drive changed while Sentinel was closed. Sentinel cannot tell where without administrator rights, so the analysis may be out of date.";
+    action = "Analyze again";
+  } else if (status.afterRestart?.state === "journalReset") {
+    text =
+      "Windows reset this drive's change record while Sentinel was closed, so what changed meanwhile cannot be known and the analysis may be out of date.";
+    action = "Analyze again";
   } else if (changed > 0) {
     text = `${changed} folder${changed === 1 ? "" : "s"} changed since this analysis.`;
     action = status.canUpdateIncrementally ? "Update (re-reads only those folders)" : "Analyze again";
+  } else if (status.afterRestart?.state === "verified") {
+    text =
+      "Windows recorded no changes on this drive while Sentinel was closed, so this analysis should still be current. No other changes seen since.";
   } else if (sinceLater && status.sinceMs !== null) {
     text = `No changes seen since ${formatDateTime(status.sinceMs)}. Changes before then are not known.`;
   } else {

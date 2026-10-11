@@ -68,6 +68,8 @@ Incremental change tracking (spike: USN vs `ReadDirectoryChangesW`), growth hist
 
 6. ✅ Analysis thinning: scans are thinned as they age (newest three always, one per day for two weeks, one per week beyond, incomplete old ones dropped, hard ceiling of 30 per root) so frequent updates cannot use up the history; about four months of history fit in the ceiling
 
+7. ✅ Surviving a restart: the last full tree is saved to a file after every analysis or update (hand-written, checksummed, strictly validated format; a damaged or impossible file is refused, never repaired), together with the drive's change-journal position read *before* the scan (unelevated, per the spike). At startup the tree is brought back only if the journal shows nothing was recorded on the drive meanwhile; then updates stay incremental. If it moved, was recreated, or cannot be read, the file is discarded and the banner says why. The journal says only that something changed somewhere on the drive, never where, so this helps most on quiet data drives; on a busy system drive it will usually report a change
+
 ## Phase 8 – AI abstraction 🔄
 `AiProvider` trait, redaction layer, schema validation, NL → structured query. Local models only.
 
@@ -97,10 +99,9 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 8 is complete, and the "Folders not changed lately" panel (Storage page, built on the
-same query with no AI) is done. Candidates for next: the two items still open from Phase 7
-(persist scan trees across restarts, startup USN-journal check); a first manual run of the
-assistant against a real local Ollama; then Phase 10 (plugins) or Phase 11 (polish).
+Phases 7 to 9 are complete. Candidates for next: a first manual run of the assistant against
+a real local Ollama and of the recovery plan on real data; the Phase 10 plugin design document
+(design and threat model review before any code); then Phase 11 (polish).
 
 ## Completed first milestone (historical)
 

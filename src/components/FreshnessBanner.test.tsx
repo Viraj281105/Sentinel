@@ -16,6 +16,7 @@ const base: WatchStatus = {
   lostEvents: false,
   broken: null,
   canUpdateIncrementally: true,
+  afterRestart: null,
 };
 
 function show(status: WatchStatus | "error", onUpdate = vi.fn(), busy = false) {
@@ -38,6 +39,31 @@ describe("FreshnessBanner", () => {
   it("admits what it cannot know when watching began after the analysis", async () => {
     show({ ...base, sinceMs: FINISHED + 60_000 });
     expect(await screen.findByText(/Changes before then are not known/)).toBeInTheDocument();
+  });
+
+  it("reports what the drive's change record says about the time Sentinel was closed", async () => {
+    const view = show({ ...base, sinceMs: FINISHED + 60_000, afterRestart: { state: "verified" } });
+    expect(await screen.findByText(/recorded no changes on this drive while Sentinel was closed/)).toBeInTheDocument();
+    expect(screen.queryByText(/Changes before then are not known/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(view).not.toHaveBeenCalled();
+  });
+
+  it("asks for a full analysis when the drive changed or its record was reset while closed", async () => {
+    const changed = show({
+      ...base,
+      canUpdateIncrementally: false,
+      afterRestart: { state: "changedWhileClosed", journalBytes: 4000 },
+    });
+    expect(await screen.findByText(/changed while Sentinel was closed/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Analyze again" }));
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not claim the drive is unchanged when its record was reset", async () => {
+    show({ ...base, canUpdateIncrementally: false, afterRestart: { state: "journalReset" } });
+    expect(await screen.findByText(/cannot be known/)).toBeInTheDocument();
+    expect(screen.queryByText(/should still be current/)).not.toBeInTheDocument();
   });
 
   it("offers an incremental update and never starts one by itself", async () => {

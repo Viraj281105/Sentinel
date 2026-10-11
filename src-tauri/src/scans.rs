@@ -5,16 +5,18 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use sentinel_classify::{Category, CategoryBytes, Classification, Classifier};
 use sentinel_scanner::incremental::{RescanError, rescan};
+use sentinel_scanner::persist::{self, Snapshot};
 use sentinel_scanner::scan::{
     LargeFile, NodeId, NodeStatus, ScanControl, ScanOptions, ScanProgress, ScanStats, ScanTree,
     scan,
 };
+use sentinel_scanner::usn::{JournalChange, JournalPosition, journal_position};
 use sentinel_scanner::watch::{Changes, WatchOptions, Watcher};
 use sentinel_store::{Retention, ScanId, ScanRecord};
 use serde::Serialize;
@@ -174,6 +176,29 @@ pub struct LargeFileView {
     pub classification: Option<Classification>,
 }
 
+/// What was learned about the time Sentinel was closed, from the volume's change journal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "state"
+)]
+#[ts(export)]
+pub enum ResumeStatus {
+    /// The drive's change journal did not move while Sentinel was closed: nothing on it
+    /// changed, so the saved analysis should still be current and updates stay incremental.
+    Verified,
+    /// Something on the drive changed while Sentinel was closed. The journal cannot say
+    /// where without administrator rights, so a full analysis is needed.
+    ChangedWhileClosed {
+        /// How far the journal advanced: a rough size of the activity, not a file count.
+        #[ts(type = "number")]
+        journal_bytes: u64,
+    },
+    /// The drive's journal was recreated, so what happened meanwhile cannot be known.
+    JournalReset,
+}
+
 /// Whether the saved analysis is still current, according to the folder watcher.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -196,6 +221,10 @@ pub struct WatchStatus {
     pub broken: Option<String>,
     /// An update can re-read just the changed folders (otherwise it analyzes everything).
     pub can_update_incrementally: bool,
+    /// What the drive's change journal said about the time Sentinel was closed. `None` when
+    /// it could not be checked (no saved tree, or a drive without a journal) or after a new
+    /// analysis.
+    pub after_restart: Option<ResumeStatus>,
 }
 
 struct Running {
@@ -279,6 +308,10 @@ pub(crate) trait ScanEvents: Send + Sync + 'static {
     fn failed(&self, e: ScanFailedEvent);
 }
 
+/// Reads a volume's journal position; replaceable so tests do not depend on other programs
+/// writing to the same drive.
+type Probe = Arc<dyn Fn(&Path) -> std::io::Result<JournalPosition> + Send + Sync>;
+
 pub(crate) struct ScanManager {
     slot: Arc<Mutex<Slot>>,
     retained: Arc<Mutex<Option<Retained>>>,
@@ -286,6 +319,122 @@ pub(crate) struct ScanManager {
     db: Db,
     classifier: Arc<Classifier>,
     retention: Retention,
+    /// Where the last full tree is saved so it survives a restart.
+    snapshot_file: Option<PathBuf>,
+    probe: Probe,
+    /// Bumped by every new analysis, so a slow restore can tell it has been overtaken.
+    epoch: Arc<AtomicU64>,
+    resume: Arc<Mutex<Option<ResumeStatus>>>,
+}
+
+/// A snapshot larger than this is not read back (the app keeps at most ~400,000 folders).
+const SNAPSHOT_MAX_BYTES: u64 = 1 << 30;
+
+/// Save the tree atomically. Best effort: failing only means a full analysis after a restart.
+fn write_snapshot(file: &Path, scan_id: ScanId, journal: JournalPosition, tree: &ScanTree) {
+    let snap = Snapshot {
+        scan_id,
+        journal,
+        saved_at_ms: now_ms(),
+        tree: tree.clone(),
+    };
+    let result = persist::encode(&snap)
+        .map_err(|e| e.to_string())
+        .and_then(|bytes| {
+            let tmp = file.with_extension("tmp");
+            if let Some(dir) = file.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
+            std::fs::rename(&tmp, file).map_err(|e| e.to_string())
+        });
+    if let Err(err) = result {
+        tracing::warn!(file = %file.display(), error = %err, "could not save the scan tree");
+    }
+}
+
+fn remove_snapshot(file: &Path) {
+    if let Err(err) = std::fs::remove_file(file)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(file = %file.display(), error = %err, "could not remove the saved scan tree");
+    }
+}
+
+/// Everything the startup restore needs, so it can run on its own thread.
+struct RestoreCtx {
+    db: Db,
+    file: PathBuf,
+    probe: Probe,
+    retained: Arc<Mutex<Option<Retained>>>,
+    resume: Arc<Mutex<Option<ResumeStatus>>>,
+    epoch: Arc<AtomicU64>,
+}
+
+/// Bring the last full tree back after a restart, but only when the drive's change journal
+/// shows nothing at all changed since the tree was saved. Otherwise the file is discarded.
+fn restore(ctx: &RestoreCtx, epoch_seen: u64) {
+    let Ok(meta) = std::fs::metadata(&ctx.file) else {
+        return; // nothing saved
+    };
+    let discard = || remove_snapshot(&ctx.file);
+    if meta.len() > SNAPSHOT_MAX_BYTES {
+        return discard();
+    }
+    let snap = match std::fs::read(&ctx.file)
+        .map_err(|e| e.to_string())
+        .and_then(|b| persist::decode(&b).map_err(|e| e.to_string()))
+    {
+        Ok(s) => s,
+        Err(err) => {
+            tracing::warn!(error = %err, "the saved scan tree is unusable; discarded");
+            return discard();
+        }
+    };
+    let latest = ctx.db.lock().latest_scan().ok().flatten();
+    let current = latest
+        .is_some_and(|l| l.id == snap.scan_id && same_folder(Path::new(&l.root), &snap.tree.root));
+    if !current {
+        return discard(); // a newer analysis exists
+    }
+    let now = match (ctx.probe)(&snap.tree.root) {
+        Ok(p) => p,
+        Err(err) => {
+            tracing::info!(error = %err, "the drive's change journal could not be read");
+            return discard();
+        }
+    };
+    let status = match snap.journal.compare(now) {
+        JournalChange::Unchanged => ResumeStatus::Verified,
+        JournalChange::Changed { bytes } => ResumeStatus::ChangedWhileClosed {
+            journal_bytes: bytes,
+        },
+        JournalChange::Reset => ResumeStatus::JournalReset,
+    };
+    // The check and the install happen under the same lock `new_baseline` takes to bump the
+    // epoch, so an analysis begun meanwhile can never be followed by this older tree.
+    let mut resume = lock_any(&ctx.resume);
+    if ctx.epoch.load(Ordering::SeqCst) != epoch_seen {
+        return;
+    }
+    if status == ResumeStatus::Verified {
+        let mut kept = lock_any(&ctx.retained);
+        if kept.is_some() {
+            return;
+        }
+        *kept = Some(Retained {
+            scan_id: snap.scan_id,
+            tree: snap.tree,
+        });
+        tracing::info!(
+            scan = snap.scan_id,
+            "scan tree restored; the drive had no changes"
+        );
+    } else {
+        discard();
+        tracing::info!(?status, "the drive changed while Sentinel was closed");
+    }
+    *resume = Some(status);
 }
 
 fn lock(slot: &Mutex<Slot>) -> MutexGuard<'_, Slot> {
@@ -389,7 +538,34 @@ impl ScanManager {
             db,
             classifier,
             retention: Retention::default(),
+            snapshot_file: None,
+            probe: Arc::new(journal_position),
+            epoch: Arc::default(),
+            resume: Arc::default(),
         }
+    }
+
+    /// Keep the last full tree in `file` so incremental updates survive a restart.
+    pub(crate) fn with_snapshot_file(mut self, file: PathBuf) -> Self {
+        self.snapshot_file = Some(file);
+        self
+    }
+
+    #[cfg(test)]
+    fn with_probe(mut self, probe: Probe) -> Self {
+        self.probe = probe;
+        self
+    }
+
+    fn restore_ctx(&self) -> Option<RestoreCtx> {
+        Some(RestoreCtx {
+            db: self.db.clone(),
+            file: self.snapshot_file.clone()?,
+            probe: Arc::clone(&self.probe),
+            retained: Arc::clone(&self.retained),
+            resume: Arc::clone(&self.resume),
+            epoch: Arc::clone(&self.epoch),
+        })
     }
 
     /// Claim the single scan slot for `root`.
@@ -441,7 +617,41 @@ impl ScanManager {
         };
         let path = PathBuf::from(&latest.root);
         if path.is_absolute() && path.is_dir() {
+            // Watch first, then check the journal: anything that changes after the watch
+            // began is seen by the watcher, anything before it by the journal.
             self.begin_watch(&path);
+            if let Some(ctx) = self.restore_ctx() {
+                let epoch = self.epoch.load(Ordering::SeqCst);
+                let spawned = std::thread::Builder::new()
+                    .name("sentinel-restore".into())
+                    .spawn(move || restore(&ctx, epoch));
+                if let Err(err) = spawned {
+                    tracing::warn!(error = %err, "could not start restoring the scan tree");
+                }
+            }
+        }
+    }
+
+    /// [`Self::resume_watch`] with the restore done before returning, for tests.
+    #[cfg(test)]
+    fn resume_watch_now(&self) {
+        let Ok(Some(latest)) = self.db.lock().latest_scan() else {
+            return;
+        };
+        self.begin_watch(Path::new(&latest.root));
+        if let Some(ctx) = self.restore_ctx() {
+            restore(&ctx, self.epoch.load(Ordering::SeqCst));
+        }
+    }
+
+    /// A new baseline: forget what the last restart learned and any saved tree.
+    fn new_baseline(&self) {
+        let mut resume = lock_any(&self.resume);
+        self.epoch.fetch_add(1, Ordering::SeqCst);
+        *resume = None;
+        drop(resume);
+        if let Some(file) = &self.snapshot_file {
+            remove_snapshot(file);
         }
     }
 
@@ -462,7 +672,12 @@ impl ScanManager {
         let (id, control) = self.claim(root)?;
         // The old tree describes an older state; the watch restarts with this scan.
         *lock_any(&self.retained) = None;
+        self.new_baseline();
         self.begin_watch(&path);
+        // Where the journal stands *before* the scan: any change after this, including one
+        // made during the scan, makes a later comparison say "changed", never "unchanged".
+        let journal = (self.probe)(&path).ok();
+        let snapshot_file = self.snapshot_file.clone();
 
         tracing::info!(id, root, "scan started");
         let events = Arc::new(events);
@@ -487,6 +702,9 @@ impl ScanManager {
                         let keep = tree.nodes.len() <= RETAIN_MAX_NODES
                             && !tree.stats.cancelled
                             && !tree.stats.truncated;
+                        if keep && let (Some(file), Some(journal)) = (&snapshot_file, journal) {
+                            write_snapshot(file, scan.scan_id, journal, &tree);
+                        }
                         *lock_any(&retained) = keep.then_some(Retained {
                             scan_id: scan.scan_id,
                             tree,
@@ -528,6 +746,7 @@ impl ScanManager {
                 lost_events: false,
                 broken: None,
                 can_update_incrementally: false,
+                after_restart: None,
             });
         };
         active.pump();
@@ -546,6 +765,7 @@ impl ScanManager {
             can_update_incrementally: retained_ok
                 && !lost
                 && same_folder(&active.root, Path::new(&latest.root)),
+            after_restart: lock_any(&self.resume).clone(),
         })
     }
 
@@ -565,6 +785,9 @@ impl ScanManager {
     fn start_incremental(&self, root: &str, events: impl ScanEvents) -> Result<u64, CommandError> {
         let (id, control) = self.claim(root)?;
         tracing::info!(id, root, "incremental update started");
+        // Captured before the changes are taken, for the same reason as in `start`.
+        let journal = (self.probe)(Path::new(root)).ok();
+        let snapshot_file = self.snapshot_file.clone();
         let events = Arc::new(events);
         let done = Arc::new(AtomicBool::new(false));
         spawn_progress_reporter(id, root, &control, &events, &done);
@@ -596,6 +819,11 @@ impl ScanManager {
                     (&db, &classifier, retention),
                     started,
                 );
+                if let (Ok(scan), Some(r), Some(file), Some(journal)) =
+                    (&outcome, &kept, &snapshot_file, journal)
+                {
+                    write_snapshot(file, scan.scan_id, journal, &r.tree);
+                }
                 *lock_any(&retained) = kept;
                 if outcome.is_err()
                     && let Some(a) = lock_any(&watch).as_mut()
@@ -1053,5 +1281,201 @@ mod tests {
         let err = manager().update(recorder().0).unwrap_err();
         assert_eq!(err.kind, ErrorKind::NotFound);
         assert!(!manager().watch_status().unwrap().watching);
+    }
+
+    // ---- surviving a restart -------------------------------------------------------
+
+    /// A journal whose position the test controls: (id, next USN), shared with the manager.
+    fn fake_journal(initial: (u64, u64)) -> (Probe, Arc<Mutex<(u64, u64)>>) {
+        let pos = Arc::new(Mutex::new(initial));
+        let p = Arc::clone(&pos);
+        let probe: Probe = Arc::new(move |_| {
+            let (journal_id, next_usn) = *p.lock().unwrap();
+            Ok(JournalPosition {
+                journal_id,
+                next_usn,
+            })
+        });
+        (probe, pos)
+    }
+
+    /// A manager over `db` that saves its tree to `file`, as the app does. Creating a second
+    /// one over the same database and file stands in for restarting the app.
+    fn persistent(db: &Db, file: &std::path::Path, probe: Probe) -> ScanManager {
+        ScanManager::new(db.clone(), Arc::new(Classifier::new(&HashMap::new())))
+            .with_snapshot_file(file.to_path_buf())
+            .with_probe(probe)
+    }
+
+    #[test]
+    fn a_restart_over_an_untouched_drive_keeps_incremental_updates() {
+        let dir = fixture();
+        let state = tempfile::tempdir().unwrap();
+        let file = state.path().join("scan-tree.bin");
+        let db = Db::in_memory();
+        let (probe, _pos) = fake_journal((7, 1000));
+
+        let first = run(&persistent(&db, &file, probe.clone()), dir.path());
+        assert!(file.exists(), "the tree was saved after the analysis");
+
+        let after = persistent(&db, &file, probe);
+        assert!(!after.watch_status().unwrap().can_update_incrementally);
+        after.resume_watch_now();
+        let st = after.watch_status().unwrap();
+        assert_eq!(st.after_restart, Some(ResumeStatus::Verified));
+        assert!(st.watching && st.can_update_incrementally && !st.lost_events);
+
+        // And the restored tree really is usable: a change is picked up by an update that
+        // re-reads only that folder, and the result is saved again.
+        put(&dir.path().join("big").join("inner").join("g"), 2 * MB);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while after.watch_status().unwrap().changed_dirs == 0 {
+            assert!(std::time::Instant::now() < deadline, "no change seen");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let (rec, rx) = recorder();
+        after.update(rec).unwrap();
+        let done = wait_done(&rx).unwrap_or_else(|e| panic!("update failed: {}", e.message));
+        assert!(done.scan.scan_id > first.scan_id);
+        assert_eq!(done.scan.stats.files, first.stats.files + 1);
+        assert!(file.exists());
+    }
+
+    #[test]
+    fn a_drive_that_changed_while_closed_is_reported_and_needs_a_full_analysis() {
+        let dir = fixture();
+        let state = tempfile::tempdir().unwrap();
+        let file = state.path().join("scan-tree.bin");
+        let db = Db::in_memory();
+        let (probe, pos) = fake_journal((7, 1000));
+        run(&persistent(&db, &file, probe.clone()), dir.path());
+
+        *pos.lock().unwrap() = (7, 5000); // something changed while closed
+        let after = persistent(&db, &file, probe);
+        after.resume_watch_now();
+        let st = after.watch_status().unwrap();
+        assert_eq!(
+            st.after_restart,
+            Some(ResumeStatus::ChangedWhileClosed {
+                journal_bytes: 4000
+            })
+        );
+        assert!(!st.can_update_incrementally, "the tree is not trusted");
+        assert!(!file.exists(), "and it is thrown away");
+    }
+
+    #[test]
+    fn a_recreated_journal_is_reported_and_nothing_is_trusted() {
+        let dir = fixture();
+        let state = tempfile::tempdir().unwrap();
+        let file = state.path().join("scan-tree.bin");
+        let db = Db::in_memory();
+        let (probe, pos) = fake_journal((7, 1000));
+        run(&persistent(&db, &file, probe.clone()), dir.path());
+        *pos.lock().unwrap() = (8, 1000);
+        let after = persistent(&db, &file, probe);
+        after.resume_watch_now();
+        let st = after.watch_status().unwrap();
+        assert_eq!(st.after_restart, Some(ResumeStatus::JournalReset));
+        assert!(!st.can_update_incrementally);
+    }
+
+    #[test]
+    fn an_unreadable_journal_means_nothing_is_saved_and_a_restart_is_a_full_analysis() {
+        let dir = fixture();
+        let state = tempfile::tempdir().unwrap();
+        let file = state.path().join("scan-tree.bin");
+        let db = Db::in_memory();
+        let none: Probe = Arc::new(|_| Err(std::io::Error::other("no journal on this drive")));
+        run(&persistent(&db, &file, none.clone()), dir.path());
+        assert!(
+            !file.exists(),
+            "a tree that cannot be checked later is not kept"
+        );
+        let after = persistent(&db, &file, none);
+        after.resume_watch_now();
+        let st = after.watch_status().unwrap();
+        assert!(st.after_restart.is_none() && !st.can_update_incrementally);
+    }
+
+    #[test]
+    fn a_snapshot_of_an_older_analysis_or_a_damaged_file_is_discarded() {
+        let dir = fixture();
+        let state = tempfile::tempdir().unwrap();
+        let file = state.path().join("scan-tree.bin");
+        let db = Db::in_memory();
+        let (probe, _pos) = fake_journal((7, 1000));
+        run(&persistent(&db, &file, probe.clone()), dir.path());
+        let good = std::fs::read(&file).unwrap();
+
+        // Another analysis (by a manager that does not save a tree) supersedes it.
+        run(&manager_over(&db), dir.path());
+        let after = persistent(&db, &file, probe.clone());
+        after.resume_watch_now();
+        assert!(!after.watch_status().unwrap().can_update_incrementally);
+        assert!(!file.exists());
+
+        // Damage: flipped bytes, and a truncated file.
+        for damaged in [
+            {
+                let mut b = good.clone();
+                let mid = b.len() / 2;
+                b[mid] ^= 0xFF;
+                b
+            },
+            good[..good.len() / 2].to_vec(),
+            b"garbage".to_vec(),
+        ] {
+            std::fs::write(&file, damaged).unwrap();
+            let again = persistent(&db, &file, probe.clone());
+            again.resume_watch_now();
+            assert!(!again.watch_status().unwrap().can_update_incrementally);
+            assert!(!file.exists(), "a damaged file is removed");
+        }
+    }
+
+    fn manager_over(db: &Db) -> ScanManager {
+        ScanManager::new(db.clone(), Arc::new(Classifier::new(&HashMap::new())))
+    }
+
+    #[test]
+    fn a_new_analysis_replaces_the_saved_tree_and_forgets_the_restart_note() {
+        let dir = fixture();
+        let state = tempfile::tempdir().unwrap();
+        let file = state.path().join("scan-tree.bin");
+        let db = Db::in_memory();
+        let (probe, pos) = fake_journal((7, 1000));
+        run(&persistent(&db, &file, probe.clone()), dir.path());
+        *pos.lock().unwrap() = (7, 2000);
+        let after = persistent(&db, &file, probe);
+        after.resume_watch_now();
+        assert!(after.watch_status().unwrap().after_restart.is_some());
+
+        let second = run(&after, dir.path());
+        assert!(after.watch_status().unwrap().after_restart.is_none());
+        assert!(file.exists(), "the new analysis wrote its own tree");
+        let snap = persist::decode(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(snap.scan_id, second.scan_id);
+        assert_eq!(
+            snap.journal.next_usn, 2000,
+            "the position before the new scan"
+        );
+    }
+
+    #[test]
+    fn a_restore_overtaken_by_a_new_analysis_installs_nothing() {
+        let dir = fixture();
+        let state = tempfile::tempdir().unwrap();
+        let file = state.path().join("scan-tree.bin");
+        let db = Db::in_memory();
+        let (probe, _pos) = fake_journal((7, 1000));
+        run(&persistent(&db, &file, probe.clone()), dir.path());
+        let after = persistent(&db, &file, probe);
+        let ctx = after.restore_ctx().unwrap();
+        let stale_epoch = after.epoch.load(Ordering::SeqCst);
+        after.new_baseline(); // an analysis begins while the restore is still reading
+        restore(&ctx, stale_epoch);
+        assert!(lock_any(&after.retained).is_none());
+        assert!(lock_any(&after.resume).is_none());
     }
 }
