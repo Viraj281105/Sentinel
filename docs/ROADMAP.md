@@ -88,8 +88,10 @@ Deterministic "recover N GB" planner with risk ceiling; explainability panel.
 2. ✅ "Free up space" panel on the Cleanup page (`plan_recovery`): previews every cleanable provider plus the saved projects (re-inspected, inactive only, never Git-tracked), shows the plan with per-item reasons, what removal costs, and what each source offered. Read-only
 3. ✅ Run a plan: one confirmation lists every item, then each source's items go through the existing quarantine executor as their own audited operation (so every item is re-assessed immediately before it moves; anything that changed, is in use, or gained a protected file stays). Moves to quarantine only, restorable for 14 days. The project list is rebuilt on the backend from saved searches, never taken from the caller; a stale plan cannot be run twice
 
-## Phase 10 – Plugins ⬜
+## Phase 10 – Plugins 🚧 (design only)
 Declarative plugin format, capability manifest, user approval flow.
+
+1. 📝 Design drafted in docs/PLUGINS.md: data-only plugins that can only describe cleanup candidates for the existing provider, planner and quarantine path; anchored roots, no `safe` risk, an age floor, a pinned hash and a live dry run in the approval screen. **Awaiting maintainer review; no code until the open questions there are answered** (the first is whether v1 needs plugins at all).
 
 ## Phase 11 – Polish ⬜
 UI polish, notifications, installer, startup integration.
@@ -100,8 +102,8 @@ Security review, fuzzing of path handling, performance budget, public-release do
 ## Next implementation milestone
 
 Phases 7 to 9 are complete. Candidates for next: a first manual run of the assistant against
-a real local Ollama and of the recovery plan on real data; the Phase 10 plugin design document
-(design and threat model review before any code); then Phase 11 (polish).
+a real local Ollama and of the recovery plan on real data; your review of docs/PLUGINS.md (whether to build Phase 10 at all);
+then Phase 11 (polish).
 
 ## Completed first milestone (historical)
 
