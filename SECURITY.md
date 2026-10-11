@@ -10,9 +10,6 @@ Use GitHub's private vulnerability reporting for this repository: open the repos
 **Security** tab and choose **Report a vulnerability**. Include what you found, how to reproduce
 it, the Sentinel version (Settings shows it) and your Windows version.
 
-*(Maintainer: this works only when "Private vulnerability reporting" is enabled under the
-repository's Settings, Code security. If you would rather use an e-mail address, put it here.)*
-
 This is a single-maintainer project, so there is no guaranteed response time. Reports will be
 acknowledged as soon as possible, fixed in the order of their impact, and credited if you wish.
 

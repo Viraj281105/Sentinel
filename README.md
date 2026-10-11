@@ -5,7 +5,7 @@ Sentinel shows what is using the disk space on a Windows PC, and helps you get i
 and WSL disks, old toolchains) but works for anyone.
 
 > **Status: pre-release.** Everything described here exists and is tested, but there is no
-> signed release yet and no license has been chosen (see below).
+> signed release yet.
 
 ## What it does
 
@@ -83,5 +83,4 @@ Please report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
 
 ## License
 
-No license has been chosen yet. Until one is added to this repository, all rights are reserved
-by the author.
+[MIT](LICENSE).
