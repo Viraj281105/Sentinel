@@ -21,6 +21,9 @@ and WSL disks, old toolchains) but works for anyone.
 - **Projects, Software, Dependencies, Containers**: read-only views of your development
   projects, installed programs, the runtimes they need, and Docker and WSL disk use. It never
   starts Docker, and it never removes software or touches Docker volumes or WSL disks.
+- **Plugins** (optional): data files that teach Sentinel about another tool's cache folders. A
+  plugin cannot run code, and everything it offers goes through the same checks, preview and
+  confirmation as Sentinel's own cleanup types. See [docs/PLUGIN_AUTHORING.md](docs/PLUGIN_AUTHORING.md).
 - **Optional, off by default**: an AI assistant that answers questions about a saved analysis
   using a model running **on your own computer** (Ollama), and an alert when a drive is low on
   space. Everything works without them.

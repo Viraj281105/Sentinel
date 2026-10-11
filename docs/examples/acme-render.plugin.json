@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "id": "example.acme-render",
+  "name": "Acme Render caches",
+  "version": "1.0.0",
+  "author": "Acme Tools",
+  "description": "Frame and shader caches kept by the (fictional) Acme Render.",
+  "capabilities": ["filesystem.read", "filesystem.cleanup"],
+  "cleanup": [
+    {
+      "id": "shader-cache",
+      "name": "Acme shader cache",
+      "root": { "anchor": "localAppData", "path": "Acme\\Render\\ShaderCache" },
+      "children": { "names": ["gl", "vk", "dx-*"] },
+      "risk": "lowRisk",
+      "minAgeDays": 14,
+      "description": "Compiled shaders.",
+      "onRemoval": "Acme Render recompiles them the next time it runs; the first start is slower."
+    },
+    {
+      "id": "frame-cache",
+      "name": "Acme frame cache",
+      "root": { "anchor": "localAppData", "path": "Acme\\Render\\FrameCache" },
+      "children": { "names": ["*"] },
+      "risk": "mediumRisk",
+      "minAgeDays": 30,
+      "description": "Rendered preview frames kept so a project reopens quickly.",
+      "onRemoval": "Previews are rendered again when a project is opened; large projects take longer the first time."
+    }
+  ]
+}

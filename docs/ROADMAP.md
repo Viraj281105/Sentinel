@@ -88,10 +88,15 @@ Deterministic "recover N GB" planner with risk ceiling; explainability panel.
 2. ✅ "Free up space" panel on the Cleanup page (`plan_recovery`): previews every cleanable provider plus the saved projects (re-inspected, inactive only, never Git-tracked), shows the plan with per-item reasons, what removal costs, and what each source offered. Read-only
 3. ✅ Run a plan: one confirmation lists every item, then each source's items go through the existing quarantine executor as their own audited operation (so every item is re-assessed immediately before it moves; anything that changed, is in use, or gained a protected file stays). Moves to quarantine only, restorable for 14 days. The project list is rebuilt on the backend from saved searches, never taken from the caller; a stale plan cannot be run twice
 
-## Phase 10 – Plugins 🚧 (design only)
+## Phase 10 – Plugins ✅
 Declarative plugin format, capability manifest, user approval flow.
 
-1. 📝 Design drafted in docs/PLUGINS.md: data-only plugins that can only describe cleanup candidates for the existing provider, planner and quarantine path; anchored roots, no `safe` risk, an age floor, a pinned hash and a live dry run in the approval screen. **Awaiting maintainer review; no code until the open questions there are answered** (the first is whether v1 needs plugins at all).
+1. ✅ Design (docs/PLUGINS.md) and decisions: data-only plugins that can only describe cleanup candidates for the existing provider, planner and quarantine path
+2. ✅ `sentinel-plugins`: strict, I/O-free manifest validator (anchored roots, protected names and personal folders refused, no `safe` risk, an age floor, bounded plain text, one wildcard), canonical form and SHA-256; 23 tests (validator and provider) including a seeded fuzz of root paths, checked against deliberate breaks
+3. ✅ A validated plugin as an ordinary cleanup type (`DeclarativeProvider`), with a plugin label, namespaced id, and a root that is dropped if links lead out of its anchor
+4. ✅ Store v7 (approved plugins, audit kind) and the application layer: inspect (live dry run, stores nothing), approve by fingerprint of this session's inspection, switch, remove, re-verification on every use, integration into Cleanup, previews, runs and recovery plans (never in a Safe plan); all audited
+5. ✅ Plugins page with the review screen, plugin labels on Cleanup
+6. ✅ Threat model rows T23 to T28, authoring guide (docs/PLUGIN_AUTHORING.md) and a sample plugin that a test keeps valid
 
 ## Phase 11 – Polish 🚧
 UI polish, notifications, installer, startup integration.

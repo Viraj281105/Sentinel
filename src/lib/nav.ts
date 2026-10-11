@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   type LucideIcon,
   Package,
+  Puzzle,
   Settings,
   Sparkles,
 } from "lucide-react";
@@ -24,6 +25,7 @@ export type PageId =
   | "containers"
   | "assistant"
   | "activity"
+  | "plugins"
   | "settings";
 
 export interface PageDef {
@@ -46,5 +48,6 @@ export const PAGES: PageDef[] = [
   { id: "containers", label: "Containers", icon: Container, plannedPhase: null, summary: "Docker images, containers, volumes and WSL distributions (read-only)." },
   { id: "assistant", label: "AI Assistant", icon: Sparkles, plannedPhase: null, summary: "Optional, advisory natural-language analysis. Off by default." },
   { id: "activity", label: "Activity", icon: Activity, plannedPhase: null, summary: "Audit log of every cleanup operation." },
+  { id: "plugins", label: "Plugins", icon: Puzzle, plannedPhase: null, summary: "Data-only plugins that describe more cleanup folders. Optional." },
   { id: "settings", label: "Settings", icon: Settings, plannedPhase: null, summary: "Protected locations, logging and preferences." },
 ];

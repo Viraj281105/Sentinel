@@ -8,6 +8,7 @@ import { Cleanup } from "./pages/Cleanup";
 import { Containers } from "./pages/Containers";
 import { Dependencies } from "./pages/Dependencies";
 import { Overview } from "./pages/Overview";
+import { Plugins } from "./pages/Plugins";
 import { Projects } from "./pages/Projects";
 import { Settings } from "./pages/Settings";
 import { Software } from "./pages/Software";
@@ -31,6 +32,8 @@ function Page({ id }: { id: PageId }) {
       return <Dependencies />;
     case "software":
       return <Software />;
+    case "plugins":
+      return <Plugins />;
     case "assistant":
       return <Assistant />;
     case "settings":

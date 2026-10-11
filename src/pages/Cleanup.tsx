@@ -24,7 +24,7 @@ function ProviderCard({ info, onMoved }: { info: ProviderInfo; onMoved: () => vo
     }
   };
   return (
-    <Panel title={CATEGORY[info.category].label}>
+    <Panel title={info.plugin ? `Plugin: ${info.plugin.pluginName} by ${info.plugin.author}` : CATEGORY[info.category].label}>
       <div className="flex items-start gap-4">
         <div className="flex-1 space-y-1.5 text-sm">
           <h3 className="text-base font-medium">{info.name}</h3>

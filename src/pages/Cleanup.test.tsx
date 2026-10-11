@@ -23,6 +23,7 @@ const provider: ProviderInfo = {
   minAgeDays: 7,
   canClean: true,
   note: null,
+  plugin: null,
 };
 const T = "C:\\Users\\u\\AppData\\Local\\Temp\\";
 const preview: Preview = {

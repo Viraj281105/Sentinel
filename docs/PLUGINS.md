@@ -1,8 +1,9 @@
 # Plugins (Phase 10 design)
 
-Status: **proposed, awaiting maintainer review. No code has been written for this.**
-Everything below is a recommendation with its reasoning; each decision can be overruled, and
-the open questions at the end are the ones that most need an answer before building.
+Status: **implemented** (2026-10-11), following this design with the defaults below. The
+maintainer asked for everything to be built, so the open questions were settled by their
+recommended answers; any of them can still be changed. How the shipped version differs from
+the draft is listed at the end. For writing a plugin, see [PLUGIN_AUTHORING.md](PLUGIN_AUTHORING.md).
 
 ## What a plugin is, and is not
 
@@ -159,7 +160,7 @@ Each step is a separate, tested commit.
 - **Plugin-supplied classification or project detectors**: classification must stay compiled in
   unless a rule format is found that cannot grant eligibility (principle 6).
 
-## Open questions for the maintainer
+## Decisions taken (these were the open questions)
 
 1. **Do you want plugins in v1 at all?** The same effect is available by adding built-in
    providers in code, which is safer and simpler. Plugins earn their cost only if other people (or
@@ -170,3 +171,25 @@ Each step is a separate, tested commit.
    fully regenerable; for unknown tools a stricter floor seems right.
 4. **No `safe` risk for plugins**, so they never appear in the safest plans. Confirm.
 5. **File format and extension**: plain `.json` (as drafted) or a dedicated extension?
+
+Answers used: 1 yes (built when asked to do everything, although skipping was the recommendation);
+2 the three anchors as drafted; 3 a floor of 3 days and a default of 7; 4 no `safe` risk; 5 plain
+`.json`.
+
+## How the shipped version differs from the draft
+
+- **Approval is by fingerprint of an inspection made this session.** `plugin_install` takes only
+  the SHA-256 of something the backend itself inspected and remembered in memory, so what is stored
+  is exactly what was shown, regardless of what the file or the interface says later.
+- **The fingerprint is of the canonical form** (normalized path separators, sorted capabilities,
+  the default age filled in), so the same plugin always has the same fingerprint however it was
+  spelled, and a stored plugin can be re-verified from the database alone.
+- **A root whose links lead out of its anchor is not used** (added): a junction that a program
+  creates inside the anchor cannot redirect a plugin to an unrelated folder. The preview says why.
+- **Protected-name rules are applied at validation too**, using the same name rules as the safety
+  crate, in addition to the run-time checks (so a bad file is refused with a clear message instead
+  of showing up as an empty preview).
+- Provider ids are `plugin:<plugin id>:<type id>`; a plugin's items carry a plugin label on the
+  Cleanup page, in previews and in plans (`Name (plugin: X by Y)`).
+- Plugin changes are audited as a `plugin` entry with the action and the fingerprint; if that
+  record cannot be written, the change does not happen.

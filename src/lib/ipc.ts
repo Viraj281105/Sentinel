@@ -20,6 +20,8 @@ import type { LargeFileView } from "../bindings/LargeFileView";
 import type { ManifestEntry } from "../bindings/ManifestEntry";
 import type { PlanRunResponse } from "../bindings/PlanRunResponse";
 import type { Preferences } from "../bindings/Preferences";
+import type { Inspection } from "../bindings/Inspection";
+import type { PluginSummary } from "../bindings/PluginSummary";
 import type { PreviewResponse } from "../bindings/PreviewResponse";
 import type { ProjectSearch } from "../bindings/ProjectSearch";
 import type { ProtectedLocation } from "../bindings/ProtectedLocation";
@@ -55,6 +57,11 @@ export const ipc = {
     invoke<PlanRunResponse>("run_recovery_plan", { approved }),
   preferences: () => invoke<Preferences>("preferences"),
   setPreferences: (preferences: Preferences) => invoke<Preferences>("set_preferences", { preferences }),
+  pluginsList: () => invoke<PluginSummary[]>("plugins_list"),
+  pluginInspect: (file: string) => invoke<Inspection>("plugin_inspect", { file }),
+  pluginInstall: (sha256: string) => invoke<PluginSummary>("plugin_install", { sha256 }),
+  pluginSetEnabled: (id: string, enabled: boolean) => invoke<null>("plugin_set_enabled", { id, enabled }),
+  pluginRemove: (id: string) => invoke<null>("plugin_remove", { id }),
   aiSettings: () => invoke<AiSettings>("ai_settings"),
   setAiSettings: (settings: AiSettings) => invoke<AiSettings>("set_ai_settings", { settings }),
   askAssistant: (question: string, scanId?: number) => invoke<AskResponse>("ask_assistant", { question, scanId }),

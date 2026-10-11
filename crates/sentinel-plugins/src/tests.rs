@@ -483,3 +483,13 @@ fn whatever_the_root_path_says_an_accepted_plugin_has_only_plain_relative_folder
     );
     assert!(refused_n > 30_000, "and hostile ones ({refused_n})");
 }
+
+#[test]
+fn the_documented_example_is_a_valid_plugin() {
+    let p = parse(include_bytes!(
+        "../../../docs/examples/acme-render.plugin.json"
+    ))
+    .unwrap();
+    assert_eq!(p.manifest.cleanup.len(), 2);
+    assert_eq!(p.manifest.cleanup[1].children.names, ["*"]);
+}
