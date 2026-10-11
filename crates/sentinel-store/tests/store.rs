@@ -192,7 +192,7 @@ fn file_database_persists_across_reopen() {
             .unwrap()
     };
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 6);
+    assert_eq!(s.schema_version().unwrap(), 7);
     assert_eq!(s.latest_scan().unwrap().unwrap().id, id);
 }
 
@@ -285,7 +285,7 @@ fn upgrades_a_version_1_database_in_place() {
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
         conn.execute_batch(
-            "DROP TABLE settings; DROP TABLE project_searches; DROP TABLE audit_log; DROP TABLE scan_categories;
+            "DROP TABLE plugins; DROP TABLE settings; DROP TABLE project_searches; DROP TABLE audit_log; DROP TABLE scan_categories;
              ALTER TABLE scan_nodes DROP COLUMN newest_ms;
              ALTER TABLE scan_largest_files DROP COLUMN modified_ms;
              PRAGMA user_version = 1;",
@@ -293,7 +293,7 @@ fn upgrades_a_version_1_database_in_place() {
         .unwrap();
     }
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 6);
+    assert_eq!(s.schema_version().unwrap(), 7);
     assert_eq!(
         s.latest_scan().unwrap().unwrap().id,
         id,
@@ -659,4 +659,33 @@ fn settings_are_saved_replaced_and_absent_until_set() {
     s.set_setting("ai.enabled", "true").unwrap();
     s.set_setting("ai.enabled", "false").unwrap();
     assert_eq!(s.setting("ai.enabled").unwrap().as_deref(), Some("false"));
+}
+
+#[test]
+fn plugins_are_saved_replaced_switched_and_removed() {
+    use sentinel_store::PluginRow;
+    let s = Store::open_in_memory().unwrap();
+    assert!(s.plugins().unwrap().is_empty());
+    let mut p = PluginRow {
+        id: "example.acme".into(),
+        version: "1.0.0".into(),
+        sha256: "a".repeat(64),
+        manifest: "{}".into(),
+        enabled: true,
+        approved_at_ms: 10,
+    };
+    s.save_plugin(&p).unwrap();
+    // A new approved version replaces the old row, it does not add a second one.
+    p.version = "1.1.0".into();
+    p.sha256 = "b".repeat(64);
+    p.approved_at_ms = 20;
+    s.save_plugin(&p).unwrap();
+    assert_eq!(s.plugins().unwrap(), vec![p.clone()]);
+
+    assert!(s.set_plugin_enabled("example.acme", false).unwrap());
+    assert!(!s.plugins().unwrap()[0].enabled);
+    assert!(!s.set_plugin_enabled("nope", true).unwrap());
+    assert!(s.remove_plugin("example.acme").unwrap());
+    assert!(!s.remove_plugin("example.acme").unwrap());
+    assert!(s.plugins().unwrap().is_empty());
 }

@@ -11,6 +11,7 @@ pub(crate) mod cleanup;
 pub(crate) mod containers;
 pub(crate) mod error;
 pub(crate) mod history;
+pub(crate) mod plugins;
 pub(crate) mod prefs;
 pub(crate) mod projects;
 pub(crate) mod quarantine;

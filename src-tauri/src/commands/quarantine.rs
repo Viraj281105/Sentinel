@@ -4,7 +4,7 @@
 //! executor re-checks every item before moving it and writes audit records first.
 
 use sentinel_cleanup::CleanupProvider;
-use sentinel_cleanup::providers::{self, ProjectArtifacts};
+use sentinel_cleanup::providers::ProjectArtifacts;
 use sentinel_quarantine::{Context, Manifest, ManifestEntry, Quarantine, QuarantineError};
 use sentinel_safety::Policy;
 use serde::Serialize;
@@ -64,7 +64,7 @@ fn run(
             "Choose between 1 and 10,000 items to move.",
         ));
     }
-    let all = providers::builtin();
+    let all = crate::plugins::all_providers(db);
     let provider = all
         .iter()
         .find(|p| p.info().id == provider_id)

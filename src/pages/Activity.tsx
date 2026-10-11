@@ -15,6 +15,7 @@ const KIND: Record<AuditKind, string> = {
   quarantine: "Moved to quarantine",
   restore: "Restored from quarantine",
   purge: "Expired quarantine removed",
+  plugin: "Plugin changed",
 };
 
 const OUTCOME: Record<Outcome, string> = {

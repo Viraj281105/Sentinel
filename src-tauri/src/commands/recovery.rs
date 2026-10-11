@@ -1,6 +1,6 @@
 //! The recovery planner command. Read-only: it previews and plans, and changes nothing.
 
-use sentinel_cleanup::{Risk, providers};
+use sentinel_cleanup::Risk;
 use tauri::State;
 
 use super::error::CommandError;
@@ -19,7 +19,7 @@ pub(crate) async fn plan_recovery(
     target_bytes: u64,
     max_risk: Risk,
 ) -> Result<RecoveryPlan, CommandError> {
-    let policy = state.policy.clone();
+    let (policy, db) = (state.policy.clone(), state.db.clone());
     let searches: Vec<_> = saved_searches(&state.db)?
         .into_iter()
         .map(|s| s.detection)
@@ -30,7 +30,7 @@ pub(crate) async fn plan_recovery(
         let project_paths = recovery::project_paths(&searches);
         recovery::build(
             &policy,
-            &providers::builtin(),
+            &crate::plugins::all_providers(&db),
             &project_paths,
             now_ms(),
             target_bytes,
@@ -64,7 +64,7 @@ pub(crate) async fn run_recovery_plan(
             &policy,
             &db,
             &user,
-            &providers::builtin(),
+            &crate::plugins::all_providers(&db),
             &project_paths,
             &approved,
         )

@@ -140,6 +140,18 @@ CREATE TABLE settings (
     value TEXT NOT NULL
 ) WITHOUT ROWID;
 ",
+    // Approved plugins. The canonical manifest is kept here (not read again from the file the
+    // person picked), with the SHA-256 it had when approved.
+    r"
+CREATE TABLE plugins (
+    id             TEXT    PRIMARY KEY,
+    version        TEXT    NOT NULL,
+    sha256         TEXT    NOT NULL,
+    manifest       TEXT    NOT NULL,
+    enabled        INTEGER NOT NULL,
+    approved_at_ms INTEGER NOT NULL
+) WITHOUT ROWID;
+",
 ];
 
 /// How much of each scan to keep, and how many scans.
@@ -865,5 +877,71 @@ impl Store {
             params![key, value],
         )?;
         Ok(())
+    }
+}
+
+/// An approved plugin as stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginRow {
+    pub id: String,
+    pub version: String,
+    pub sha256: String,
+    /// The canonical manifest text; its SHA-256 must equal `sha256` when loaded.
+    pub manifest: String,
+    pub enabled: bool,
+    pub approved_at_ms: i64,
+}
+
+impl Store {
+    /// Save an approved plugin, replacing any earlier version with the same id.
+    pub fn save_plugin(&self, p: &PluginRow) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO plugins (id, version, sha256, manifest, enabled, approved_at_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET version = ?2, sha256 = ?3, manifest = ?4,
+                 enabled = ?5, approved_at_ms = ?6",
+            params![
+                p.id,
+                p.version,
+                p.sha256,
+                p.manifest,
+                i64::from(p.enabled),
+                p.approved_at_ms
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn plugins(&self) -> Result<Vec<PluginRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, version, sha256, manifest, enabled, approved_at_ms FROM plugins ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(PluginRow {
+                id: r.get(0)?,
+                version: r.get(1)?,
+                sha256: r.get(2)?,
+                manifest: r.get(3)?,
+                enabled: r.get::<_, i64>(4)? != 0,
+                approved_at_ms: r.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Switch a plugin on or off. Returns whether it exists.
+    pub fn set_plugin_enabled(&self, id: &str, enabled: bool) -> Result<bool> {
+        Ok(self.conn.execute(
+            "UPDATE plugins SET enabled = ?2 WHERE id = ?1",
+            params![id, i64::from(enabled)],
+        )? > 0)
+    }
+
+    /// Forget a plugin. Returns whether it existed. Quarantined items are unaffected.
+    pub fn remove_plugin(&self, id: &str) -> Result<bool> {
+        Ok(self
+            .conn
+            .execute("DELETE FROM plugins WHERE id = ?1", [id])?
+            > 0)
     }
 }

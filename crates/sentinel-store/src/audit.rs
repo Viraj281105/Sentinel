@@ -32,6 +32,9 @@ pub enum AuditKind {
     Restore,
     /// Expired quarantine items removed.
     Purge,
+    /// A plugin was approved, replaced, switched on or off, or removed. The details say
+    /// which, and carry the plugin's fingerprint.
+    Plugin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

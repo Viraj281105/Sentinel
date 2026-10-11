@@ -12,6 +12,7 @@ mod db;
 mod history;
 mod logging;
 mod lowspace;
+mod plugins;
 mod prefs;
 mod query;
 mod recovery;
@@ -30,6 +31,8 @@ pub(crate) struct AppState {
     /// Windows account name, recorded in audit entries.
     pub user: String,
     pub scans: scans::ScanManager,
+    /// Plugin files inspected this session, waiting for approval.
+    pub pending_plugins: std::sync::Arc<plugins::Pending>,
     /// The user's quarantine; `None` if the profile folder cannot be located.
     pub quarantine: Option<sentinel_quarantine::Quarantine>,
 }
@@ -102,6 +105,7 @@ pub fn run() {
                 db,
                 user,
                 quarantine,
+                pending_plugins: std::sync::Arc::default(),
             });
             app.state::<AppState>().scans.resume_watch();
             start_low_space_alerts(app.handle().clone());
@@ -122,6 +126,11 @@ pub fn run() {
             commands::history::folder_history,
             commands::history::anomaly_report,
             commands::query::query_saved_analysis,
+            commands::plugins::plugins_list,
+            commands::plugins::plugin_inspect,
+            commands::plugins::plugin_install,
+            commands::plugins::plugin_set_enabled,
+            commands::plugins::plugin_remove,
             commands::prefs::preferences,
             commands::prefs::set_preferences,
             commands::ai::ai_settings,

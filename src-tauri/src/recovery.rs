@@ -67,10 +67,19 @@ pub(crate) fn gather(
             PreviewLimits::default(),
             &AtomicBool::new(false),
         );
-        let found = candidates_from_preview(&pv);
+        // The planner takes the plain name; where a plugin wrote the cleanup type, the plan
+        // says so on every item.
+        let label = crate::plugins::display_name(&info);
+        let found: Vec<Candidate> = candidates_from_preview(&pv)
+            .into_iter()
+            .map(|mut c| {
+                c.source_name.clone_from(&label);
+                c
+            })
+            .collect();
         considered.push(Considered {
             source: info.id.to_owned(),
-            name: info.name.to_owned(),
+            name: crate::plugins::display_name(&info),
             risk: info.risk,
             eligible_items: found.len() as u64,
             eligible_bytes: found.iter().map(|c| c.bytes).sum(),
@@ -233,7 +242,7 @@ pub(crate) fn execute(
         }
         let mut part = RunPart {
             source: source.to_owned(),
-            source_name: info.name.to_owned(),
+            source_name: crate::plugins::display_name(&info),
             run: None,
             error: None,
         };

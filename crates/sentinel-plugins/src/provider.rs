@@ -68,7 +68,7 @@ impl DeclarativeProvider {
     }
 
     /// The folder the plugin points at, before anything is resolved.
-    fn declared_root(&self) -> Option<PathBuf> {
+    pub fn declared_root(&self) -> Option<PathBuf> {
         let anchor = self.anchor.as_ref()?;
         Some(
             self.spec()

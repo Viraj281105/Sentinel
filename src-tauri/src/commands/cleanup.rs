@@ -3,7 +3,7 @@
 use std::sync::atomic::AtomicBool;
 
 use sentinel_cleanup::providers::ProjectArtifacts;
-use sentinel_cleanup::{CleanupProvider, Preview, PreviewLimits, ProviderInfo, preview, providers};
+use sentinel_cleanup::{CleanupProvider, Preview, PreviewLimits, ProviderInfo, preview};
 use sentinel_safety::Policy;
 use serde::Serialize;
 use tauri::State;
@@ -14,8 +14,16 @@ use crate::db::{Db, now_ms};
 use crate::{AppState, audit};
 
 #[tauri::command]
-pub(crate) fn cleanup_providers() -> Vec<ProviderInfo> {
-    providers::builtin().iter().map(|p| p.info()).collect()
+pub(crate) fn cleanup_providers(state: State<'_, AppState>) -> Vec<ProviderInfo> {
+    list_providers(&state.db)
+}
+
+/// Built-in cleanup types plus those of enabled plugins that still verify.
+fn list_providers(db: &Db) -> Vec<ProviderInfo> {
+    crate::plugins::all_providers(db)
+        .iter()
+        .map(|p| p.info())
+        .collect()
 }
 
 /// A preview plus where it was recorded in the audit log.
@@ -41,7 +49,7 @@ pub(crate) async fn cleanup_preview(
     let db = state.db.clone();
     let user = state.user.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let preview = run_preview(&providers::builtin(), &policy, &provider)?;
+        let preview = run_preview(&crate::plugins::all_providers(&db), &policy, &provider)?;
         Ok(recorded(preview, &db, &user))
     })
     .await
@@ -137,7 +145,10 @@ mod tests {
 
     #[test]
     fn lists_builtin_providers() {
-        let ids: Vec<_> = cleanup_providers().into_iter().map(|p| p.id).collect();
+        let ids: Vec<_> = list_providers(&Db::in_memory())
+            .into_iter()
+            .map(|p| p.id)
+            .collect();
         assert_eq!(
             ids,
             [
