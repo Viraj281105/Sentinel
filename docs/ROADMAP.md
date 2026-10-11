@@ -103,8 +103,13 @@ UI polish, notifications, installer, startup integration.
 
 Also fixed here: `npm audit` reported a high-severity advisory in a build-time dependency (`source-map-js`), which would have failed the CI audit job; resolved with a three-line lockfile update.
 
-## Phase 12 – Hardening & release ⬜
+## Phase 12 – Hardening & release 🚧
 Security review, fuzzing of path handling, performance budget, public-release docs.
+
+1. ✅ Fuzzing of path handling (`sentinel-safety/tests/fuzz.rs`, seeded and reproducible, no new dependency): the protected-path rules are checked against an independently written oracle on 200,000 random paths (random case, separators, doubled and trailing separators, every protected name and extension); `is_within` against a component oracle on 100,000 pairs (never a string-prefix test); 30,000 hostile strings (device and UNC prefixes, streams, reserved names, control and bidi characters, 400-character names) must never panic or yield a target outside the root; and 6,000 mutated real paths (including through a junction to a folder outside the root) must only ever validate to a real, unlinked, unprotected child of the root. **Checked that the tests can fail**: deliberately breaking the code (string-prefix `is_within`, dropping `.kube`, dropping the `pem` extension, removing both junction defences) was caught each time; removing only one of the two junction defences is correctly not caught, because the second layer still holds
+2. ⬜ Security review of the executor, quarantine and recovery-plan paths against THREAT_MODEL.md
+3. ⬜ Performance budget (scan time and memory on a large drive, startup time, restore time of a saved tree)
+4. ⬜ Public-release documentation (README, install and uninstall, what Sentinel never does, reporting security issues)
 
 ## Next implementation milestone
 

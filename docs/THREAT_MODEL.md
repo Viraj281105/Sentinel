@@ -33,7 +33,7 @@ in `sentinel-cleanup`.
 
 | # | Threat | Mitigation (required) |
 |---|---|---|
-| T1 | Path traversal (`..`, mixed separators, `\\?\`, 8.3 short names, alternate data streams, trailing dots/spaces, device names) | Single canonicalization routine in `sentinel-safety`; all paths validated post-canonicalization; deny ADS and device-namespace paths |
+| T1 | Path traversal (`..`, mixed separators, `\\?\`, 8.3 short names, alternate data streams, trailing dots/spaces, device names) | Single canonicalization routine in `sentinel-safety`; all paths validated post-canonicalization; deny ADS and device-namespace paths . *Fuzzed:* see `crates/sentinel-safety/tests/fuzz.rs` (oracle comparison on 200k random paths, 30k hostile strings, 6k mutated real paths including through a junction) |
 | T2 | Symlink/junction redirection to a protected target | Never follow reparse points during scan or delete; delete the link, not the target; canonicalize and re-check ancestry before acting |
 | T3 | TOCTOU (path swapped between validation and delete) | *Implemented:* the executor re-assesses each item immediately before acting, then `ValidatedTarget::open_verified` revalidates and opens the object itself, checking volume serial, file index and link status on the handle; the move is a rename through that handle (`SetFileInformationByHandle`, no replace, same volume only). Residual: a file added inside a folder item after its descendant check moves with the folder (reversible) |
 | T4 | Malicious/erroneous cleanup rules | Rules are data validated against the same policy; a rule cannot lower a path below its protection level; built-in providers use an allowlist of roots |
