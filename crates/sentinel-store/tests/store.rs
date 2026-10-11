@@ -192,7 +192,7 @@ fn file_database_persists_across_reopen() {
             .unwrap()
     };
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 5);
+    assert_eq!(s.schema_version().unwrap(), 6);
     assert_eq!(s.latest_scan().unwrap().unwrap().id, id);
 }
 
@@ -285,7 +285,7 @@ fn upgrades_a_version_1_database_in_place() {
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
         conn.execute_batch(
-            "DROP TABLE project_searches; DROP TABLE audit_log; DROP TABLE scan_categories;
+            "DROP TABLE settings; DROP TABLE project_searches; DROP TABLE audit_log; DROP TABLE scan_categories;
              ALTER TABLE scan_nodes DROP COLUMN newest_ms;
              ALTER TABLE scan_largest_files DROP COLUMN modified_ms;
              PRAGMA user_version = 1;",
@@ -293,7 +293,7 @@ fn upgrades_a_version_1_database_in_place() {
         .unwrap();
     }
     let s = Store::open(&path).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 5);
+    assert_eq!(s.schema_version().unwrap(), 6);
     assert_eq!(
         s.latest_scan().unwrap().unwrap().id,
         id,
@@ -650,4 +650,13 @@ fn change_times_roundtrip_and_unknown_stays_unknown() {
         4,
         "root, big, inner, link are stored"
     );
+}
+
+#[test]
+fn settings_are_saved_replaced_and_absent_until_set() {
+    let s = Store::open_in_memory().unwrap();
+    assert_eq!(s.setting("ai.enabled").unwrap(), None);
+    s.set_setting("ai.enabled", "true").unwrap();
+    s.set_setting("ai.enabled", "false").unwrap();
+    assert_eq!(s.setting("ai.enabled").unwrap().as_deref(), Some("false"));
 }

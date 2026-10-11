@@ -42,6 +42,14 @@ pub fn system_prompt(vocab: &QueryVocabulary) -> String {
     )
 }
 
+/// A validated query and the exact text the model was given, so a person can see both.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Translation {
+    pub query: StructuredQuery,
+    /// The redacted question as sent. The fixed instructions are [`system_prompt`].
+    pub sent: String,
+}
+
 /// Ask `provider` to turn `question` into a query. Read-only: nothing is executed.
 pub fn translate(
     provider: &dyn AiProvider,
@@ -49,6 +57,16 @@ pub fn translate(
     vocab: &QueryVocabulary,
     question: &str,
 ) -> Result<StructuredQuery, TranslateError> {
+    translate_detailed(provider, redactor, vocab, question).map(|t| t.query)
+}
+
+/// Like [`translate`], also returning exactly what was sent.
+pub fn translate_detailed(
+    provider: &dyn AiProvider,
+    redactor: &mut Redactor,
+    vocab: &QueryVocabulary,
+    question: &str,
+) -> Result<Translation, TranslateError> {
     let question = question.trim();
     if question.is_empty() {
         return Err(TranslateError::Empty);
@@ -56,19 +74,20 @@ pub fn translate(
     if question.chars().count() > MAX_QUESTION_CHARS {
         return Err(TranslateError::TooLong);
     }
+    let sent = redactor.redact(question);
     let req = AiRequest {
         system: system_prompt(vocab),
-        user: redactor.redact(question),
+        user: sent.clone(),
         json_mode: true,
         max_tokens: MAX_ANSWER_TOKENS,
     };
     let answer = provider.complete(&req)?;
-    let mut q = parse_query(&answer, vocab)?;
+    let mut query = parse_query(&answer, vocab)?;
     // The model saw placeholders; show the person their own words.
-    if let Some(p) = q.path_contains.take() {
-        q.path_contains = Some(redactor.restore(&p)).filter(|s| !s.trim().is_empty());
+    if let Some(p) = query.path_contains.take() {
+        query.path_contains = Some(redactor.restore(&p)).filter(|s| !s.trim().is_empty());
     }
-    Ok(q)
+    Ok(Translation { query, sent })
 }
 
 #[cfg(test)]
@@ -118,6 +137,20 @@ mod tests {
             user_names: vec!["VIRAJ".into()],
             host_names: vec!["DESKTOP-9KQ2".into()],
         })
+    }
+
+    #[test]
+    fn detailed_translation_returns_exactly_what_was_sent() {
+        let p = Fake::says(r#"{"target":"files"}"#);
+        let t = translate_detailed(
+            &p,
+            &mut redactor(),
+            &vocab(),
+            r"big files in C:\Users\VIRAJ\Documents",
+        )
+        .unwrap();
+        assert_eq!(t.sent, p.seen.lock().unwrap()[0].user);
+        assert!(!t.sent.contains("VIRAJ"));
     }
 
     #[test]

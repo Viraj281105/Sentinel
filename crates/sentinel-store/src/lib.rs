@@ -133,6 +133,13 @@ CREATE TABLE project_searches (
 ALTER TABLE scan_nodes ADD COLUMN newest_ms INTEGER;
 ALTER TABLE scan_largest_files ADD COLUMN modified_ms INTEGER;
 ",
+    // Small named preferences (for example the AI assistant switch).
+    r"
+CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+) WITHOUT ROWID;
+",
 ];
 
 /// How much of each scan to keep, and how many scans.
@@ -837,5 +844,26 @@ impl Store {
             .conn
             .execute("DELETE FROM project_searches WHERE root = ?1", [root])?
             > 0)
+    }
+}
+
+impl Store {
+    /// A saved preference, if one was ever set.
+    pub fn setting(&self, key: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()?)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            params![key, value],
+        )?;
+        Ok(())
     }
 }

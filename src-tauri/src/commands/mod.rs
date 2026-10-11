@@ -6,6 +6,7 @@
 //! companion items that re-exports do not carry.
 
 pub(crate) mod activity;
+pub(crate) mod ai;
 pub(crate) mod cleanup;
 pub(crate) mod containers;
 pub(crate) mod error;

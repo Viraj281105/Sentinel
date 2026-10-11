@@ -82,8 +82,26 @@ is stable and reversible for non-secrets, and that secrets are irreversibly remo
 future feature that sends filesystem-derived text adds a test of the same shape for its
 inputs, plus the send-preview requirement above.
 
-## What this milestone builds
+## What has been built
 
 `crates/sentinel-ai`: the `AiProvider` trait, the loopback-only Ollama provider, the
 redactor, the structured-query schema and validator, and the translation pipeline joining
-them. No UI, no Tauri command and no settings toggle yet.
+them.
+
+The app layer (`src-tauri/src/ai.rs`, `commands/ai.rs`) adds:
+
+- **The switch** is in Settings and stored in the local database. It is off until someone
+  turns it on. While off, no provider object is built and `ask_assistant` is refused before
+  anything is sent.
+- **The address is checked twice**: when saved (a non-local address is refused with the
+  reason) and again when the provider is built.
+- **Nothing is asked when there is nothing to query**: with no saved analysis the model is
+  not called.
+- **The model's answer is not trusted twice over**: it is validated by the parser, then
+  serialized and validated again by `run_json`, the same entry point a person's query uses.
+- **Transparency**: the answer is labelled as AI-made, shows the exact redacted text that
+  was sent, and the plain-words description of the search before the results. Parts of the
+  question the saved data cannot answer are stated ahead of the results.
+
+Still true: the model receives only the typed question and the fixed instructions, and
+cannot reach the executor or any deletion path.

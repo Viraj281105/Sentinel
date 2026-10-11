@@ -1,7 +1,9 @@
 // Typed wrappers around Tauri commands. Types come from Rust via ts-rs
 // (src/bindings); never hand-write a type that crosses the IPC boundary.
 import { invoke } from "@tauri-apps/api/core";
+import type { AiSettings } from "../bindings/AiSettings";
 import type { AnomalyReport } from "../bindings/AnomalyReport";
+import type { AskResponse } from "../bindings/AskResponse";
 import type { AppInfo } from "../bindings/AppInfo";
 import type { AuditEntry } from "../bindings/AuditEntry";
 import type { AuditIntegrity } from "../bindings/AuditIntegrity";
@@ -40,6 +42,9 @@ export const ipc = {
   folderHistory: (scanId: number, node: number) => invoke<FolderHistory>("folder_history", { scanId, node }),
   updateScan: () => invoke<number>("update_scan"),
   watchStatus: () => invoke<WatchStatus>("watch_status"),
+  aiSettings: () => invoke<AiSettings>("ai_settings"),
+  setAiSettings: (settings: AiSettings) => invoke<AiSettings>("set_ai_settings", { settings }),
+  askAssistant: (question: string, scanId?: number) => invoke<AskResponse>("ask_assistant", { question, scanId }),
   cancelScan: (id: number) => invoke<boolean>("cancel_scan", { id }),
   scanStatus: () => invoke<ScanStatus>("scan_status"),
   scanListing: (scanId: number, node: number) => invoke<DirListing>("scan_listing", { scanId, node }),

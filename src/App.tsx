@@ -3,6 +3,7 @@ import { NotImplemented } from "./components/NotImplemented";
 import { Sidebar } from "./components/Sidebar";
 import { PAGES, type PageId } from "./lib/nav";
 import { Activity } from "./pages/Activity";
+import { Assistant } from "./pages/Assistant";
 import { Cleanup } from "./pages/Cleanup";
 import { Containers } from "./pages/Containers";
 import { Dependencies } from "./pages/Dependencies";
@@ -30,6 +31,8 @@ function Page({ id }: { id: PageId }) {
       return <Dependencies />;
     case "software":
       return <Software />;
+    case "assistant":
+      return <Assistant />;
     case "settings":
       return <Settings />;
     default: {

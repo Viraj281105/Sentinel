@@ -20,4 +20,4 @@ pub use ollama::{OllamaConfig, OllamaProvider, validate_loopback_url};
 pub use provider::{AiConfig, AiError, AiProvider, AiRequest};
 pub use query::{QueryError, QueryVocabulary, Sort, StructuredQuery, Target, parse_query};
 pub use redact::{RedactionContext, Redactor};
-pub use translate::{TranslateError, system_prompt, translate};
+pub use translate::{TranslateError, Translation, system_prompt, translate, translate_detailed};

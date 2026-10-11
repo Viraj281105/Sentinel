@@ -77,6 +77,8 @@ Decisions recorded in docs/AI_POLICY.md (made 2026-10-06 under the maintainer's 
 2. ✅ Query execution: a validated `StructuredQuery` runs read-only and deterministically against a saved analysis (folders by size, path text and category with nested matches counted once; files from the saved largest-files list). Re-validated at the single entry point, so a model's answer and a person's form are treated alike. `olderThanDays` is evaluated from recorded change times (item 3)
 3. ✅ Change times recorded per folder and per large file (scanner, incremental rescan, store migration); `olderThanDays` now works, as of the analysis date, and says so when an older analysis lacks times
 
+4. ✅ Settings toggle and question box: AI is switched on only in Settings (store v6 `settings` table; model name, Ollama address checked to be on this computer at save time and again at use). `ask_assistant` redacts the question, asks the local model, serializes the validated query and runs it through the same `run_json` entry point. The AI Assistant page labels the answer "AI answered this", shows the exact redacted text sent, the plain-words search, and results with anything not applied stated first. Not exercised against a live Ollama in this environment (covered by a fake provider and the existing local-HTTP-server provider tests)
+
 ## Phase 9 – Planner & recommendations ⬜
 Deterministic "recover N GB" planner with risk ceiling; explainability panel.
 
@@ -91,12 +93,10 @@ Security review, fuzzing of path handling, performance budget, public-release do
 
 ## Next implementation milestone
 
-Phase 8, next: the settings toggle, a Tauri command that runs `translate` and then the
-query, and the question box, showing a visible "AI answered this" label, the exact redacted
-text sent, and the plain-words description of the query before its results. Also still open
-from Phase 7: persist scan trees across restarts and the startup USN-journal check. A
-useful small follow-up now that times exist: a "stale folders" view built on the same
-query, with no AI involved.
+Phase 8 is complete. Candidates for next: a "stale folders" view built on the same query
+with no AI involved (change times now exist); the two items still open from Phase 7
+(persist scan trees across restarts, startup USN-journal check); a first manual run of the
+assistant against a real local Ollama; then Phase 9, the deterministic recovery planner.
 
 ## Completed first milestone (historical)
 
