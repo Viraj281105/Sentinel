@@ -70,6 +70,15 @@ Store benchmark (scans, then saves to a throwaway database in `%TEMP%` and delet
 cargo run --release -p sentinel-store --example save_scan -- C:\
 ```
 
+Saved-tree benchmark (synthetic tree, no disk scan; size and time of saving and restoring the
+retained tree):
+
+```powershell
+cargo run --release -p sentinel-scanner --example snapshot_bench -- 400000
+```
+
+Measured numbers and the performance budget are in [PERFORMANCE.md](PERFORMANCE.md).
+
 ## Local data
 
 The app keeps its database at `%LOCALAPPDATA%\dev.sentinel.app\sentinel.db` and logs in
