@@ -17,6 +17,29 @@ A Windows NSIS installer built by Tauri (`bundle.targets = ["nsis"]`).
   quarantine folder), so quarantined items stay restorable; delete those folders by hand to remove
   everything (`%LOCALAPPDATA%\dev.sentinel.app`, and the quarantine folder shown in Cleanup).
 
+## Verified install and uninstall
+
+Run by hand on 2026-10-14 with the installer built from commit `ac7f5e3` (silent mode, the same
+steps the interactive installer performs; the interactive screens themselves were not clicked
+through):
+
+| Step | Result |
+|---|---|
+| Install (`Sentinel_0.1.0_x64-setup.exe /S`, no elevation) | Exit code 0 in about 2 s. Installs `sentinel-app.exe` and `uninstall.exe` into `%LOCALAPPDATA%\Sentinel`; registers "Sentinel 0.1.0" (publisher Sentinel) under the current user's uninstall list; adds a Start Menu shortcut. No desktop shortcut, no startup entry, and the app is not launched |
+| Run the installed program | Reports `0.1.0` (not a debug build), all ten pages load without errors, uses the existing database in `%LOCALAPPDATA%\dev.sentinel.app` |
+| Background mode from the installed copy | Hides on close; the Start Menu shortcut raises the hidden window with a single process; the sign-in entry holds the installed path and is removed when switched off |
+| Uninstall (`uninstall.exe /S`) | Exit code 0. Removes the program, the uninstaller, the uninstall entry and the shortcut. Leaves the quarantine, the database and the logs untouched, and no startup entry behind |
+
+The install folder (`%LOCALAPPDATA%\Sentinel`) is also the parent of the quarantine
+(`%LOCALAPPDATA%\Sentinel\.sentinel-quarantine`). That is safe because the uninstaller deletes only the
+files it installed and then removes the folder without recursion, so a folder that still holds the quarantine
+stays. The one recursive delete is the interactive uninstaller's optional "delete the application data"
+checkbox, which targets `%LOCALAPPDATA%\dev.sentinel.app` (database, logs, saved scan tree) and never the
+quarantine. Do not change the installer to remove its folder recursively.
+
+Not verified: the interactive installer and uninstaller pages, an upgrade over an existing install,
+installing for another account, and a machine without WebView2.
+
 ## Building locally
 
 ```
