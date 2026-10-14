@@ -24,6 +24,9 @@ and WSL disks, old toolchains) but works for anyone.
 - **Plugins** (optional): data files that teach Sentinel about another tool's cache folders. A
   plugin cannot run code, and everything it offers goes through the same checks, preview and
   confirmation as Sentinel's own cleanup types. See [docs/PLUGIN_AUTHORING.md](docs/PLUGIN_AUTHORING.md).
+- **Background mode** (optional, off by default): keep Sentinel in the notification area so alerts work
+  with the window closed, and optionally start it hidden when you sign in. Sentinel adds nothing to startup
+  unless you turn that on, and removes it when you turn it off.
 - **Optional, off by default**: an AI assistant that answers questions about a saved analysis
   using a model running **on your own computer** (Ollama), and an alert when a drive is low on
   space. Everything works without them.
@@ -55,7 +58,8 @@ time you run it.
 
 **Uninstalling** removes the program but keeps Sentinel's data, so quarantined items stay
 restorable. To remove everything, delete `%LOCALAPPDATA%\dev.sentinel.app` (database and logs)
-and the quarantine folder shown on the Cleanup page.
+and the quarantine folder shown on the Cleanup page. If you turned on "Start Sentinel when I sign in", turn it off
+first (Settings), or remove "Sentinel" under Windows Settings, Apps, Startup.
 
 ## Build and run from source
 

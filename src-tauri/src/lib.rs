@@ -7,6 +7,7 @@
 mod ai;
 mod anomaly;
 mod audit;
+mod background;
 mod commands;
 mod db;
 mod history;
@@ -17,6 +18,8 @@ mod prefs;
 mod query;
 mod recovery;
 mod scans;
+mod single_instance;
+mod startup;
 
 use std::path::PathBuf;
 
@@ -35,6 +38,9 @@ pub(crate) struct AppState {
     pub pending_plugins: std::sync::Arc<plugins::Pending>,
     /// The user's quarantine; `None` if the profile folder cannot be located.
     pub quarantine: Option<sentinel_quarantine::Quarantine>,
+    /// Background mode is on: closing the window hides it instead of quitting. Mirrors the saved
+    /// preference so the close handler does not read the database.
+    pub background: std::sync::atomic::AtomicBool,
 }
 
 /// How often drives are checked for low space while Sentinel is running.
@@ -77,9 +83,35 @@ fn start_low_space_alerts(app: tauri::AppHandle) {
 }
 
 pub fn run() {
+    // Only one Sentinel per signed-in user. A second start (a shortcut, or the sign-in entry
+    // while it is already running hidden) asks the first to show its window and leaves.
+    let instance_name = if cfg!(debug_assertions) {
+        "dev.sentinel.app.debug"
+    } else {
+        "dev.sentinel.app"
+    };
+    let single = match single_instance::acquire(instance_name) {
+        single_instance::Instance::First(guard) => guard,
+        single_instance::Instance::AlreadyRunning => return,
+    };
+    let show_requests = single.request_waiter();
+
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .on_window_event(|window, event| {
+            // Background mode: the close button hides the window; Quit in the tray menu exits.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && window
+                    .app_handle()
+                    .state::<AppState>()
+                    .background
+                    .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .setup(move |app| {
             let log_dir = app.path().app_log_dir()?;
             let guard = logging::init(&log_dir)?;
             app.manage(guard);
@@ -94,6 +126,7 @@ pub fn run() {
                 );
             }
             let snapshot_file = app.path().app_local_data_dir()?.join("scan-tree.bin");
+            let run_in_background = prefs::load(&db).is_ok_and(|p| p.run_in_background);
             app.manage(AppState {
                 log_dir,
                 policy: Policy::for_system(),
@@ -106,9 +139,38 @@ pub fn run() {
                 user,
                 quarantine,
                 pending_plugins: std::sync::Arc::default(),
+                background: std::sync::atomic::AtomicBool::new(run_in_background),
             });
             app.state::<AppState>().scans.resume_watch();
             start_low_space_alerts(app.handle().clone());
+
+            // Background mode: the tray icon, and a hidden start when launched at sign-in.
+            // If the tray cannot be created the window is shown and closing quits as usual, so
+            // Sentinel is never running with nothing to open it from.
+            let mut tray_ok = true;
+            if run_in_background && let Err(err) = background::apply(app.handle(), true) {
+                tracing::warn!(error = %err, "background mode is on but the tray icon could not be created");
+                app.state::<AppState>()
+                    .background
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                tray_ok = false;
+            }
+            let args: Vec<String> = std::env::args().collect();
+            if !(tray_ok && background::wants_hidden_start(&args, run_in_background)) {
+                background::show_main_window(app.handle());
+            }
+            // Wake up when a second start asks for the window.
+            let handle = app.handle().clone();
+            let spawned = std::thread::Builder::new()
+                .name("sentinel-show-requests".into())
+                .spawn(move || {
+                    while show_requests.wait() {
+                        background::show_main_window(&handle);
+                    }
+                });
+            if let Err(err) = spawned {
+                tracing::warn!(error = %err, "a second start will not be able to raise this window");
+            }
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sentinel started");
             Ok(())
         })

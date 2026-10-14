@@ -4,4 +4,13 @@ export type Preferences = {
 /**
  * Show a Windows notification when a drive becomes low on space (while Sentinel runs).
  */
-lowSpaceAlerts: boolean, };
+lowSpaceAlerts: boolean, 
+/**
+ * Keep running in the notification area: closing the window hides it instead of quitting.
+ */
+runInBackground: boolean, 
+/**
+ * Start Sentinel, hidden in the notification area, when this person signs in. Needs
+ * `run_in_background`, so Sentinel can never start with no way to open it.
+ */
+startWithWindows: boolean, };
