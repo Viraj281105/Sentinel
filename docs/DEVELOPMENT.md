@@ -79,6 +79,18 @@ cargo run --release -p sentinel-scanner --example snapshot_bench -- 400000
 
 Measured numbers and the performance budget are in [PERFORMANCE.md](PERFORMANCE.md).
 
+Reproducing CI's temp-folder spelling: GitHub's Windows runners spell the temp folder with 8.3 short
+names (`C:\Users\RUNNER~1\...`), which is not its canonical form, and 8.3 names are often disabled on a
+developer machine. A junction gives the same effect on any volume:
+
+```powershell
+New-Item -ItemType Junction -Path target\ci-sim-link -Target $env:TEMP\sentinel-ci-sim
+$env:TEMP = "$PWD\target\ci-sim-link"; $env:TMP = $env:TEMP
+cargo test --workspace --no-fail-fast
+```
+
+Code that compares or maps paths must work when a root is not spelled canonically.
+
 ## Local data
 
 The app keeps its database at `%LOCALAPPDATA%\dev.sentinel.app\sentinel.db` and logs in
