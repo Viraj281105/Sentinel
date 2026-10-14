@@ -37,7 +37,10 @@ stays. The one recursive delete is the interactive uninstaller's optional "delet
 checkbox, which targets `%LOCALAPPDATA%\dev.sentinel.app` (database, logs, saved scan tree) and never the
 quarantine. Do not change the installer to remove its folder recursively.
 
-Not verified: the interactive installer and uninstaller pages, an upgrade over an existing install,
+Installing the same version twice in a row (setup run again over an existing install) also exits 0, leaves
+the program unchanged, keeps a single uninstall entry and no duplicate files, and leaves the quarantine intact.
+
+Not verified: the interactive installer and uninstaller pages, upgrading from an older version,
 installing for another account, and a machine without WebView2.
 
 ## Building locally
