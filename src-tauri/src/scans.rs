@@ -1250,6 +1250,23 @@ mod tests {
         let st = mgr.watch_status().unwrap();
         assert!(st.changed_dirs >= 2 && st.can_update_incrementally && !st.lost_events);
 
+        // NTFS refreshes a directory entry's size a moment after a write, and can report 0
+        // until then (the watcher raises a second size event when it catches up, so a real
+        // update self-corrects). Wait until enumeration shows what was written, as a person
+        // pressing Update seconds later would see.
+        let settle = std::time::Instant::now() + Duration::from_secs(20);
+        while !sentinel_scanner::dirent::read_dir(&inner)
+            .unwrap()
+            .iter()
+            .any(|e| e.name == "g" && e.allocated_bytes >= (2 * MB) as u64)
+        {
+            assert!(
+                std::time::Instant::now() < settle,
+                "enumeration never showed the new file's size"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
         let (rec, rx) = recorder();
         let id = mgr.update(rec).unwrap();
         let done = wait_done(&rx).unwrap_or_else(|e| panic!("update failed: {}", e.message));
@@ -1258,9 +1275,13 @@ mod tests {
 
         // The updated analysis equals a fresh one.
         let fresh = run(&manager(), dir.path());
-        assert_eq!(done.scan.stats.total_bytes, fresh.stats.total_bytes);
-        assert_eq!(done.scan.stats.files, fresh.stats.files);
-        assert_eq!(done.scan.stats.dirs, fresh.stats.dirs);
+        let ctx = format!("updated {:?} vs fresh {:?}", done.scan.stats, fresh.stats);
+        assert_eq!(
+            done.scan.stats.total_bytes, fresh.stats.total_bytes,
+            "{ctx}"
+        );
+        assert_eq!(done.scan.stats.files, fresh.stats.files, "{ctx}");
+        assert_eq!(done.scan.stats.dirs, fresh.stats.dirs, "{ctx}");
         assert!(mgr.watch_status().unwrap().can_update_incrementally);
     }
 
