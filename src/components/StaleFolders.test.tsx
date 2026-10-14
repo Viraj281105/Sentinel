@@ -70,4 +70,30 @@ describe("StaleFolders", () => {
     await userEvent.click(screen.getByRole("button", { name: "Show folders" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("no saved analysis");
   });
+  it("lists the outermost folders only, and says how many were left out", async () => {
+    const item = (path: string, mb: number) => ({
+      path,
+      bytes: mb * 1024 ** 2,
+      files: 1,
+      lastChangedMs: Date.UTC(2025, 0, 5),
+      classification: null,
+    });
+    mockIPC(() => ({
+      ...result,
+      matches: 4,
+      items: [
+        item("D:\\Data", 900),
+        item("D:\\Data\\sub", 800),
+        item("D:\\Data\\sub\\deep", 700),
+        item("D:\\Database", 300), // shares a prefix with Data but is not inside it
+      ],
+    }));
+    render(<StaleFolders scanId={7} />);
+    await userEvent.click(screen.getByRole("button", { name: "Show folders" }));
+    expect(await screen.findByText("D:\\Data")).toBeInTheDocument();
+    expect(screen.getByText("D:\\Database")).toBeInTheDocument();
+    expect(screen.queryByText("D:\\Data\\sub")).not.toBeInTheDocument();
+    expect(screen.queryByText("D:\\Data\\sub\\deep")).not.toBeInTheDocument();
+    expect(screen.getByText(/2 folders\s+inside them are not listed again/)).toBeInTheDocument();
+  });
 });

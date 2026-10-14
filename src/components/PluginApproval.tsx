@@ -1,6 +1,6 @@
 import { ShieldCheck } from "lucide-react";
 import type { Inspection } from "../bindings/Inspection";
-import { formatBytes } from "../lib/format";
+import { formatBytes, formatDays } from "../lib/format";
 import { RISK } from "../lib/risk";
 
 /** Text the plugin wrote, set apart so it is never mistaken for Sentinel's own words. */
@@ -83,7 +83,7 @@ export function PluginApproval({
               <dt className="text-slate-500">Risk (limited by Sentinel)</dt>
               <dd>{RISK[prov.risk]}</dd>
               <dt className="text-slate-500">Only items unchanged for</dt>
-              <dd>{prov.minAgeDays} days</dd>
+              <dd>{formatDays(prov.minAgeDays)}</dd>
               <dt className="text-slate-500">If removed, it says</dt>
               <dd>
                 <ByPlugin>{prov.onRemoval}</ByPlugin>

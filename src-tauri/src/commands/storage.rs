@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use sentinel_scanner::drives::{self, Drive};
 use sentinel_store::DriveSnapshot;
 use serde::Serialize;
@@ -60,10 +62,24 @@ fn record_snapshots(db: &Db, drives: &[Drive], at: i64) {
 /// snapshots in that window.
 #[tauri::command]
 pub(crate) fn drive_trends(state: State<'_, AppState>) -> Result<Vec<DriveTrend>, CommandError> {
-    trends(&state.db, now_ms())
+    // Measure to what the drive card shows now, not to the last hourly snapshot: otherwise
+    // two pages can show different changes for the same drive and date.
+    let current: HashMap<String, u64> = drives::list_drives()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|d| Some((d.root.to_lowercase(), d.space?.free_bytes)))
+        .collect();
+    trends(&state.db, now_ms(), &current)
 }
 
-fn trends(db: &Db, now: i64) -> Result<Vec<DriveTrend>, CommandError> {
+/// Free-space change per drive over the window. `current` holds each drive's free space right
+/// now (by lower-cased root); where present it is the end point instead of the newest
+/// snapshot, which can be up to an hour old.
+fn trends(
+    db: &Db,
+    now: i64,
+    current: &HashMap<String, u64>,
+) -> Result<Vec<DriveTrend>, CommandError> {
     let store = db.lock();
     let mut out = Vec::new();
     for root in store.snapshot_roots()? {
@@ -71,10 +87,14 @@ fn trends(db: &Db, now: i64) -> Result<Vec<DriveTrend>, CommandError> {
         if let (Some(first), Some(last)) = (h.first(), h.last())
             && h.len() >= 2
         {
+            let end = current
+                .get(&root.to_lowercase())
+                .copied()
+                .unwrap_or(last.free_bytes);
             out.push(DriveTrend {
                 root,
                 since_ms: first.taken_at_ms,
-                free_change_bytes: i64::try_from(last.free_bytes).unwrap_or(i64::MAX)
+                free_change_bytes: i64::try_from(end).unwrap_or(i64::MAX)
                     - i64::try_from(first.free_bytes).unwrap_or(i64::MAX),
                 samples: u32::try_from(h.len()).unwrap_or(u32::MAX),
             });
@@ -108,13 +128,30 @@ mod tests {
         record_snapshots(&db, &[drive("C:\\", 500)], 0);
         record_snapshots(&db, &[drive("C:\\", 450)], hour / 2);
         assert!(
-            trends(&db, hour).unwrap_or_default().is_empty(),
+            trends(&db, hour, &HashMap::new())
+                .unwrap_or_default()
+                .is_empty(),
             "one sample only"
         );
         record_snapshots(&db, &[drive("C:\\", 300)], hour);
-        let t = trends(&db, hour).unwrap_or_default();
+        let t = trends(&db, hour, &HashMap::new()).unwrap_or_default();
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].free_change_bytes, t[0].samples), (-200, 2));
+    }
+
+    #[test]
+    fn the_change_is_measured_to_the_free_space_shown_now_not_the_last_snapshot() {
+        let db = Db::in_memory();
+        let hour = SNAPSHOT_INTERVAL_MS;
+        record_snapshots(&db, &[drive("C:\\", 500)], 0);
+        record_snapshots(&db, &[drive("C:\\", 450)], hour);
+        // Free space is 300 now; the newest snapshot (450) is older. Both pages must agree.
+        let now: HashMap<String, u64> = [("c:\\".to_owned(), 300)].into();
+        let t = trends(&db, hour, &now).unwrap_or_default();
+        assert_eq!(t[0].free_change_bytes, -200);
+        // A drive with no current reading falls back to its newest snapshot.
+        let none = trends(&db, hour, &HashMap::new()).unwrap_or_default();
+        assert_eq!(none[0].free_change_bytes, -50);
     }
 
     #[test]
@@ -124,7 +161,7 @@ mod tests {
         d.space = None;
         record_snapshots(&db, &[d, drive("C:\\", 1)], 0);
         record_snapshots(&db, &[drive("C:\\", 2)], SNAPSHOT_INTERVAL_MS);
-        let t = trends(&db, SNAPSHOT_INTERVAL_MS).unwrap_or_default();
+        let t = trends(&db, SNAPSHOT_INTERVAL_MS, &HashMap::new()).unwrap_or_default();
         assert_eq!(t.len(), 1);
         assert_eq!(t[0].root, "C:\\");
     }

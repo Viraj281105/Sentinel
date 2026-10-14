@@ -28,6 +28,11 @@ export function formatDelta(bytes: number): string {
   return `${bytes > 0 ? "+" : "−"}${formatBytes(Math.abs(bytes))}`;
 }
 
+/** "1 day", "7 days". */
+export function formatDays(n: number): string {
+  return `${n.toLocaleString()} ${n === 1 ? "day" : "days"}`;
+}
+
 export function formatDateTime(ms: number): string {
   return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }

@@ -103,3 +103,19 @@ describe("AnomalyPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("The database could not be read.");
   });
 });
+
+describe("AnomalyPanel wording for an unchanged drive", () => {
+  it("does not say the drive changed by 'unchanged'", async () => {
+    mockIPC(() => ({
+      ...report,
+      netChangeBytes: 0,
+      current: { ...report.current, totalBytes: report.baseline.totalBytes },
+      grew: [],
+      shrank: [],
+      largeFiles: [],
+    }));
+    render(<AnomalyPanel scanId={2} />);
+    expect(await screen.findByText(/has not changed noticeably/)).toBeInTheDocument();
+    expect(screen.queryByText(/changed by\s*unchanged/)).not.toBeInTheDocument();
+  });
+});

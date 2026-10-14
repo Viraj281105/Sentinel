@@ -4,7 +4,7 @@ import type { ChangeKind } from "../bindings/ChangeKind";
 import type { Contributor } from "../bindings/Contributor";
 import type { Driver } from "../bindings/Driver";
 import { CATEGORY } from "../lib/categories";
-import { formatBytes, formatDate, formatDelta } from "../lib/format";
+import { CHANGE_THRESHOLD_BYTES, formatBytes, formatDate, formatDelta } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
 import { ErrorNote, Loading } from "./ui";
 
@@ -84,9 +84,18 @@ export function AnomalyPanel({ scanId }: { scanId: number }) {
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        Since {formatDate(report.baseline.finishedAtMs)} the drive changed by{" "}
-        <span className="font-semibold tabular-nums">{formatDelta(report.netChangeBytes)}</span> (
-        {formatBytes(report.baseline.totalBytes)} to {formatBytes(report.current.totalBytes)}).
+        {Math.abs(report.netChangeBytes) < CHANGE_THRESHOLD_BYTES ? (
+          <>
+            Since {formatDate(report.baseline.finishedAtMs)} the drive's size has not changed noticeably (
+            {formatBytes(report.baseline.totalBytes)} to {formatBytes(report.current.totalBytes)}).
+          </>
+        ) : (
+          <>
+            Since {formatDate(report.baseline.finishedAtMs)} the drive changed by{" "}
+            <span className="font-semibold tabular-nums">{formatDelta(report.netChangeBytes)}</span> (
+            {formatBytes(report.baseline.totalBytes)} to {formatBytes(report.current.totalBytes)}).
+          </>
+        )}
       </p>
       {nothing && (
         <p className="text-sm text-slate-500 dark:text-slate-400">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAge, formatBytes, formatDelta, percent } from "./format";
+import { formatAge, formatBytes, formatDays, formatDelta, percent } from "./format";
 
 describe("formatAge", () => {
   it("uses plain relative wording", () => {
@@ -43,5 +43,14 @@ describe("percent", () => {
   it("guards against a zero total", () => {
     expect(percent(5, 0)).toBe(0);
     expect(percent(1, 4)).toBe(25);
+  });
+});
+
+describe("formatDays", () => {
+  it("says 1 day, not 1 days", () => {
+    expect(formatDays(1)).toBe("1 day");
+    expect(formatDays(7)).toBe("7 days");
+    expect(formatDays(0)).toBe("0 days");
+    expect(formatDays(1200)).toBe("1,200 days");
   });
 });

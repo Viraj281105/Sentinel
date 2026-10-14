@@ -5,7 +5,7 @@ import type { Inspection } from "../bindings/Inspection";
 import type { PluginSummary } from "../bindings/PluginSummary";
 import { PluginApproval } from "../components/PluginApproval";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
-import { formatDateTime } from "../lib/format";
+import { formatDateTime, formatDays } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
 import { RISK } from "../lib/risk";
 
@@ -80,7 +80,7 @@ function PluginCard({
           {plugin.providers.map((p) => (
             <li key={p.id}>
               <span className="font-medium">{p.name}</span>: <span className="font-mono text-xs">{p.root ?? "—"}</span>{" "}
-              · {RISK[p.risk]} · items unchanged for {p.minAgeDays} days
+              · {RISK[p.risk]} · items unchanged for {formatDays(p.minAgeDays)}
             </li>
           ))}
         </ul>

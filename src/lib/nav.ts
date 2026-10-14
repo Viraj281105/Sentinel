@@ -1,6 +1,5 @@
 import {
   Activity,
-  Boxes,
   Brush,
   Container,
   FolderGit2,
@@ -21,7 +20,6 @@ export type PageId =
   | "software"
   | "dependencies"
   | "projects"
-  | "environments"
   | "containers"
   | "assistant"
   | "activity"
@@ -44,7 +42,6 @@ export const PAGES: PageDef[] = [
   { id: "software", label: "Software", icon: Package, plannedPhase: null, summary: "Installed applications from the Windows uninstall registry (winget and Store apps are not included yet)." },
   { id: "dependencies", label: "Dependencies", icon: Layers, plannedPhase: null, summary: "Runtimes, the projects that use them, and their disk footprint." },
   { id: "projects", label: "Projects", icon: FolderGit2, plannedPhase: null, summary: "Detected development projects, their artifacts and environments." },
-  { id: "environments", label: "Environments", icon: Boxes, plannedPhase: 5, summary: "Language runtimes and toolchains with active and stale versions." },
   { id: "containers", label: "Containers", icon: Container, plannedPhase: null, summary: "Docker images, containers, volumes and WSL distributions (read-only)." },
   { id: "assistant", label: "AI Assistant", icon: Sparkles, plannedPhase: null, summary: "Optional, advisory natural-language analysis. Off by default." },
   { id: "activity", label: "Activity", icon: Activity, plannedPhase: null, summary: "Audit log of every cleanup operation." },

@@ -7,6 +7,7 @@ import { PreviewResult } from "../components/PreviewResult";
 import { QuarantinePanel } from "../components/QuarantinePanel";
 import { ErrorNote, Loading, PageHeader, Panel } from "../components/ui";
 import { CATEGORY } from "../lib/categories";
+import { formatDays } from "../lib/format";
 import { describeError, ipc } from "../lib/ipc";
 import { RISK } from "../lib/risk";
 import { useCommand } from "../lib/useCommand";
@@ -30,7 +31,7 @@ function ProviderCard({ info, onMoved }: { info: ProviderInfo; onMoved: () => vo
           <h3 className="text-base font-medium">{info.name}</h3>
           <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
             <ShieldCheck className="size-3.5" aria-hidden />
-            {RISK[info.risk]} · only items unchanged for {info.minAgeDays} days
+            {RISK[info.risk]} · only items unchanged for {formatDays(info.minAgeDays)}
           </p>
           <p className="text-slate-600 dark:text-slate-300">{info.description}</p>
           <p className="text-slate-500 dark:text-slate-400">{info.onRemoval}</p>

@@ -91,6 +91,39 @@ cargo test --workspace --no-fail-fast
 
 Code that compares or maps paths must work when a root is not spelled canonically.
 
+## Driving the real app
+
+The Tauri window is WebView2, so the real app (real UI, real backend, real files) can be driven and
+screenshotted without a test double. Start the debug build with WebView2's debugging port on, then use
+`scripts/drive-app.mjs` (Node 22 or newer, no dependencies):
+
+```powershell
+npx tauri build --debug --no-bundle
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
+.\target\debug\sentinel-app.exe        # leave running
+
+node scripts/drive-app.mjs nav Cleanup                  # click a sidebar item
+node scripts/drive-app.mjs click "Make a plan"          # click a button by its text
+node scripts/drive-app.mjs type "Amount" "1"            # fill an input (by aria-label, placeholder or label)
+node scripts/drive-app.mjs text                         # the visible text
+node scripts/drive-app.mjs shot out.png [light|dark]    # screenshot, optionally in a colour scheme
+node scripts/drive-app.mjs eval "<js>"                  # run JavaScript in the page
+```
+
+Things to know:
+
+- The app uses your **real** database, quarantine and drives. Back up
+  `%LOCALAPPDATA%\dev.sentinel.app\sentinel.db*` first (starting a newer build upgrades its schema), and
+  only move or restore fixtures you created yourself.
+- The native file picker cannot be clicked. The Tauri bridge function is locked, so it cannot be replaced
+  inside the page either; `drive-app.mjs intercept "dialog|open" '"C:/path/file.json"' 40` answers just that
+  request at the network layer while the rest of the app runs unmodified. Start it before clicking, and
+  check that it is `ready`, or the real dialog opens.
+- A colour-scheme emulation lasts only as long as the DevTools connection, so use the `shot ... light` form.
+- If your shell runs inside a packaged (MSIX) app, writes to `%LOCALAPPDATA%` can be redirected into that
+  package's folder. Sentinel resolves the real location and refuses it as a protected path (correctly), so
+  put test fixtures under the profile folder instead (anchor `userProfile` for a plugin).
+
 ## Local data
 
 The app keeps its database at `%LOCALAPPDATA%\dev.sentinel.app\sentinel.db` and logs in

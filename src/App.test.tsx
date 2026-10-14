@@ -2,7 +2,9 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { Boxes } from "lucide-react";
 import App from "./App";
+import { NotImplemented } from "./components/NotImplemented";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { CommandError } from "./bindings/CommandError";
 import type { Drive } from "./bindings/Drive";
@@ -70,12 +72,12 @@ describe("App", () => {
   });
 
   it("marks unimplemented pages honestly instead of showing data", async () => {
-    mockBackend();
-    render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: /environments/i }));
-    expect(screen.getByRole("button", { name: /environments/i })).toHaveAttribute("aria-current", "page");
+    // Every page in the sidebar is implemented now, so the placeholder is checked directly.
+    render(<NotImplemented page={{ id: "settings", label: "Future page", icon: Boxes, plannedPhase: 12, summary: "Not built yet." }} />);
+    expect(screen.getByText("Future page")).toBeInTheDocument();
     expect(screen.getByText("Not implemented yet")).toBeInTheDocument();
-    expect(screen.getByText(/roadmap phase 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/roadmap phase 12/i)).toBeInTheDocument();
+    expect(screen.queryByText(/\d+ (GB|MB)/)).not.toBeInTheDocument();
   });
 
   it("shows each drive with a usage meter, low-space badge and media state", async () => {

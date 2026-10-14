@@ -76,7 +76,7 @@ export function StaleFolders({ scanId }: { scanId: number }) {
         </button>
       </form>
       {error && <ErrorNote message={error} />}
-      {result && <QueryResultView result={result} />}
+      {result && <QueryResultView result={result} outermostOnly />}
     </div>
   );
 }
