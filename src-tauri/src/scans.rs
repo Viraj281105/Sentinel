@@ -290,14 +290,24 @@ impl ActiveWatch {
     }
 }
 
+/// Whether two spellings name the same folder. Both are resolved first, because the analysis
+/// stores its root in canonical form (links followed, 8.3 short names expanded) while a watch
+/// keeps the spelling it was started with; comparing the text alone would call them different
+/// and silently turn off incremental updates. A path that cannot be resolved is compared as
+/// written.
 fn same_folder(a: &Path, b: &Path) -> bool {
-    let norm = |p: &Path| {
+    let resolved = |p: &Path| {
+        sentinel_safety::CanonicalPath::resolve(p)
+            .map(|c| c.as_path().to_path_buf())
+            .unwrap_or_else(|_| p.to_path_buf())
+    };
+    let norm = |p: PathBuf| {
         let s = p.to_string_lossy().to_lowercase();
         s.trim_start_matches(r"\\?\")
             .trim_end_matches('\\')
             .to_owned()
     };
-    norm(a) == norm(b)
+    norm(resolved(a)) == norm(resolved(b))
 }
 
 /// Something that can receive scan events. Implemented for the Tauri app handle; tests
@@ -1252,6 +1262,58 @@ mod tests {
         assert_eq!(done.scan.stats.files, fresh.stats.files);
         assert_eq!(done.scan.stats.dirs, fresh.stats.dirs);
         assert!(mgr.watch_status().unwrap().can_update_incrementally);
+    }
+
+    /// The 8.3 short spelling of `path`, if the volume has short names enabled.
+    fn short_path(path: &std::path::Path) -> Option<std::path::PathBuf> {
+        let out = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg(format!("for %I in (\"{}\") do @echo %~sI", path.display()))
+            .output()
+            .ok()?;
+        let p = std::path::PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+        (p.exists() && p != path).then_some(p)
+    }
+
+    #[test]
+    fn a_root_given_through_a_junction_still_updates_incrementally() {
+        // Same class of problem, reproducible on any volume: the analysis saves the canonical
+        // root (links resolved), the watch keeps the spelling it was given.
+        let dir = fixture();
+        let link = dir.path().join("link-to-fixture-root");
+        let real = dir.path().join("real-root");
+        put(&real.join("big").join("f"), 3 * MB);
+        let out = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&link)
+            .arg(&real)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let mgr = manager();
+        run(&mgr, &link);
+        let st = mgr.watch_status().unwrap();
+        assert!(st.watching && st.can_update_incrementally, "{st:?}");
+    }
+
+    #[test]
+    fn a_root_spelled_with_short_names_still_updates_incrementally() {
+        // The analysis stores the canonical spelling of its root; the watch was started on
+        // the spelling it was given. They are the same folder, so updates must stay incremental
+        // (CI runners spell their temp folders with short names, which exposed this).
+        let dir = fixture();
+        let long = dir
+            .path()
+            .join("a long folder name that needs a short alias");
+        put(&long.join("big").join("f"), 3 * MB);
+        let Some(short) = short_path(&long) else {
+            eprintln!("SKIPPED: 8.3 names are disabled on this volume");
+            return;
+        };
+        let mgr = manager();
+        run(&mgr, &short);
+        let st = mgr.watch_status().unwrap();
+        assert!(st.watching && st.can_update_incrementally, "{st:?}");
     }
 
     #[test]

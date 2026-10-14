@@ -391,8 +391,14 @@ mod tests {
         let qdir = tempfile::tempdir().unwrap();
         let q = Quarantine::at(qdir.path().join("q"));
         let db = Db::in_memory();
-        let touched = dir.path().join("touched.tmp");
-        let untouched = dir.path().join("untouched.tmp");
+        // Approved paths come from a preview, which spells them canonically; so do these (a
+        // runner's temp folder can be spelled with short names).
+        let base = sentinel_safety::CanonicalPath::resolve(dir.path())
+            .unwrap()
+            .as_path()
+            .to_path_buf();
+        let touched = base.join("touched.tmp");
+        let untouched = base.join("untouched.tmp");
         std::fs::File::options()
             .write(true)
             .open(&touched)
@@ -471,6 +477,100 @@ mod tests {
         for (target, risk) in [(0, Risk::Safe), (10, Risk::HighRisk), (10, Risk::Protected)] {
             let e = build(&policy, &providers(&dir), &[], now, target, risk).unwrap_err();
             assert_eq!(e.kind, ErrorKind::InvalidInput);
+        }
+    }
+
+    /// Manual, read-only diagnostic: the plan this machine would get right now. Nothing is
+    /// moved, no database is opened, nothing is confirmed.
+    ///
+    ///     cargo test -p sentinel-app real_plan -- --ignored --nocapture
+    #[test]
+    #[ignore = "reads this machine's real caches and projects; run by hand"]
+    fn real_plan_for_this_machine_read_only() {
+        use std::sync::atomic::AtomicBool;
+
+        let policy = Policy::for_system();
+        let providers = sentinel_cleanup::providers::builtin();
+        let root =
+            std::env::var("SENTINEL_PROJECTS_ROOT").unwrap_or_else(|_| r"D:\Projects".into());
+        let detection = sentinel_devenv::detect(
+            std::path::Path::new(&root),
+            sentinel_devenv::DetectOptions::default(),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let projects = project_paths(&[detection]);
+        println!(
+            "projects with rebuildable folders under {root}: {}",
+            projects.len()
+        );
+
+        for (label, target_mb, risk) in [
+            ("SAFE ceiling, 1 GB", 1024u64, Risk::Safe),
+            ("MEDIUM ceiling, 5 GB", 5 * 1024, Risk::MediumRisk),
+        ] {
+            let r = build(
+                &policy,
+                &providers,
+                &projects,
+                crate::db::now_ms(),
+                target_mb * 1024 * 1024,
+                risk,
+            )
+            .unwrap();
+            let p = &r.plan;
+            println!("\n=== {label} ===");
+            println!(
+                "target {} MB; planned {} MB in {} items; reaches target: {}; available at/below ceiling {} MB; above ceiling {} MB in {} items",
+                target_mb,
+                p.planned_bytes / 1_048_576,
+                p.entries.len(),
+                p.reaches_target,
+                p.available_bytes / 1_048_576,
+                p.above_ceiling_bytes / 1_048_576,
+                p.above_ceiling_items
+            );
+            for c in &r.considered {
+                println!(
+                    "  considered: {} [{:?}] {} eligible items, {} MB {}",
+                    c.name,
+                    c.risk,
+                    c.eligible_items,
+                    c.eligible_bytes / 1_048_576,
+                    c.note.as_deref().unwrap_or("")
+                );
+            }
+            for (i, e) in p.entries.iter().take(12).enumerate() {
+                println!(
+                    "  {:>2}. {:>8} MB  {:?}  {}\n      {}",
+                    i + 1,
+                    e.bytes / 1_048_576,
+                    e.risk,
+                    e.path,
+                    e.why
+                );
+            }
+            if p.entries.len() > 12 {
+                println!("  ... {} more", p.entries.len() - 12);
+            }
+            for n in &p.notes {
+                println!("  note: {n}");
+            }
+            // Whatever the machine holds, the guarantees must hold.
+            assert!(
+                p.entries.iter().all(|e| e.risk <= risk),
+                "nothing above the ceiling"
+            );
+            assert!(
+                p.entries.iter().all(|e| policy
+                    .check_protected(std::path::Path::new(&e.path))
+                    .is_ok()),
+                "nothing protected"
+            );
+            let mut paths: Vec<_> = p.entries.iter().map(|e| e.path.to_lowercase()).collect();
+            paths.sort();
+            paths.dedup();
+            assert_eq!(paths.len(), p.entries.len(), "no item twice");
         }
     }
 }
