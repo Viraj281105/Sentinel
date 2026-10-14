@@ -142,7 +142,13 @@ fn assert_same(inc: &ScanTree, fresh: &ScanTree) {
 
 fn fixture() -> (tempfile::TempDir, PathBuf) {
     let d = tempfile::tempdir().unwrap();
-    let r = d.path().to_path_buf();
+    // A scan stores its root canonically (links followed, 8.3 names expanded), and changes
+    // are matched to the tree by path, so the fixture must be spelled the same way. (CI
+    // runners spell their temp folders with short names.)
+    let r = sentinel_safety::CanonicalPath::resolve(d.path())
+        .unwrap()
+        .as_path()
+        .to_path_buf();
     write(&r.join("a.bin"), 5000);
     write(&r.join("sub").join("b.bin"), 3000);
     write(&r.join("sub").join("deep").join("c.bin"), 7000);

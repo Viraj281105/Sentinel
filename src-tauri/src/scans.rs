@@ -680,6 +680,11 @@ impl ScanManager {
             ));
         }
         let (id, control) = self.claim(root)?;
+        // Watch the canonical spelling of the root: the analysis stores it that way, and an
+        // incremental update matches the watcher's paths to the saved tree by path.
+        let path = sentinel_safety::CanonicalPath::resolve(&path)
+            .map(|c| c.as_path().to_path_buf())
+            .unwrap_or(path);
         // The old tree describes an older state; the watch restarts with this scan.
         *lock_any(&self.retained) = None;
         self.new_baseline();
@@ -1223,6 +1228,11 @@ mod tests {
     #[test]
     fn watches_after_a_scan_and_updates_only_what_changed() {
         let dir = fixture();
+        // Reported paths use the canonical spelling of the root, so compare against that.
+        let base = sentinel_safety::CanonicalPath::resolve(dir.path())
+            .unwrap()
+            .as_path()
+            .to_path_buf();
         let mgr = manager();
         let first = run(&mgr, dir.path());
         let st = mgr.watch_status().unwrap();
@@ -1230,16 +1240,16 @@ mod tests {
         // (Stray hints from antivirus or indexing touching the fixture may already be
         // pending; they are harmless, so the test waits for its own directories.)
 
-        let inner = dir.path().join("big").join("inner");
+        let inner = base.join("big").join("inner");
         put(&inner.join("g"), 2 * MB);
-        std::fs::remove_file(dir.path().join("top.bin")).unwrap();
+        std::fs::remove_file(base.join("top.bin")).unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         loop {
             let seen = {
                 let mut w = lock_any(&mgr.watch);
                 let a = w.as_mut().unwrap();
                 a.pump();
-                a.acc.dirs.contains(&inner) && a.acc.dirs.contains(dir.path())
+                a.acc.dirs.contains(&inner) && a.acc.dirs.contains(&base)
             };
             if seen || std::time::Instant::now() > deadline {
                 assert!(seen, "the watcher never reported the changed folders");
@@ -1274,7 +1284,7 @@ mod tests {
         assert_eq!(done.scan.previous.as_ref().unwrap().scan_id, first.scan_id);
 
         // The updated analysis equals a fresh one.
-        let fresh = run(&manager(), dir.path());
+        let fresh = run(&manager(), &base);
         let ctx = format!("updated {:?} vs fresh {:?}", done.scan.stats, fresh.stats);
         assert_eq!(
             done.scan.stats.total_bytes, fresh.stats.total_bytes,
